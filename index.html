@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sharp Lines</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f4f4f5; color: #18181b; }
+  @media (prefers-color-scheme: dark) { body { background: #09090b; color: #f4f4f5; } }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  .sub { color: #71717a; font-size: 14px; margin: 0 0 16px; }
+  @media (prefers-color-scheme: dark) { .sub { color: #a1a1aa; } }
+  .card { background: #fff; border: 1px solid #e4e4e7; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  @media (prefers-color-scheme: dark) { .card { background: #18181b; border-color: #27272a; } }
+  input[type="password"], input[type="text"] { width: 100%; font-size: 20px; letter-spacing: 6px; text-align: center; padding: 12px; border: 1px solid #d4d4d8; border-radius: 10px; background: transparent; color: inherit; }
+  button { display: block; width: 100%; margin-top: 12px; font-size: 17px; font-weight: 600; padding: 12px; border: 0; border-radius: 10px; background: #16a34a; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .55; cursor: default; }
+  .error { color: #dc2626; text-align: center; min-height: 20px; margin: 8px 0 0; font-size: 14px; }
+  .status { font-size: 13px; color: #71717a; margin: 0 0 12px; min-height: 18px; }
+  @media (prefers-color-scheme: dark) { .status { color: #a1a1aa; } }
+  .meta { font-size: 13px; color: #71717a; margin: 2px 0; }
+  @media (prefers-color-scheme: dark) { .meta { color: #a1a1aa; } }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .chip { border: 1px solid #d4d4d8; background: transparent; color: inherit; border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; width: auto; margin: 0; font-weight: 400; }
+  .chip.active { background: #16a34a; border-color: #16a34a; color: #fff; font-weight: 600; }
+  h2 { font-size: 16px; margin: 18px 0 8px; }
+  h2 span { color: #71717a; font-weight: 400; }
+  .empty { color: #71717a; font-size: 14px; padding: 8px 0; }
+  .play { border: 1px solid #e4e4e7; border-radius: 12px; padding: 12px; margin-bottom: 10px; background: #fff; }
+  @media (prefers-color-scheme: dark) { .play { background: #18181b; border-color: #27272a; } }
+  .play .title { font-weight: 700; font-size: 15px; }
+  .play .subtitle { color: #71717a; font-size: 13px; margin-top: 2px; }
+  @media (prefers-color-scheme: dark) { .play .subtitle { color: #a1a1aa; } }
+  .badge { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: #f4f4f5; color: #3f3f46; }
+  .badge.pos { background: #dcfce7; color: #166534; }
+  @media (prefers-color-scheme: dark) { .badge.pos { background: #14532d; color: #bbf7d0; } }
+  .prices { display: flex; gap: 12px; margin-top: 8px; }
+  .price { flex: 1; border: 1px solid #e4e4e7; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+  @media (prefers-color-scheme: dark) { .price { border-color: #27272a; } }
+  .price.best { border-color: #16a34a; }
+  .price .book { font-size: 12px; color: #71717a; }
+  .price .odds { font-weight: 700; font-size: 16px; }
+  .price .ev { font-size: 12px; color: #71717a; }
+  .hitrate { font-size: 13px; margin-top: 8px; color: #166534; }
+  @media (prefers-color-scheme: dark) { .hitrate { color: #86efac; } }
+  .foot { font-size: 12px; color: #71717a; margin-top: 6px; }
+  @media (prefers-color-scheme: dark) { .foot { color: #a1a1aa; } }
+  .footer { font-size: 12px; color: #a1a1aa; text-align: center; margin: 24px 0 8px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="gate">
+    <h1>Sharp Lines</h1>
+    <p class="sub">Enter PIN to view the board</p>
+    <div class="card">
+      <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••••••" maxlength="32">
+      <button id="unlockBtn">Unlock</button>
+      <p class="error" id="pinError"></p>
+    </div>
+  </div>
+
+  <div id="board" class="hidden">
+    <h1>Sharp Lines</h1>
+    <p class="status" id="status"></p>
+    <p class="meta" id="snapshotLine"></p>
+    <p class="meta" id="updatedLine"></p>
+    <div class="chips" id="chips"></div>
+
+    <h2 id="playsHeading">+EV plays <span id="playsCount"></span></h2>
+    <div id="plays"></div>
+
+    <h2 id="restHeading">Rest of the board <span id="restCount"></span></h2>
+    <div id="rest"></div>
+
+    <p class="footer">Fair prices from Pinnacle (game lines) and a sharp-book consensus (props). PIN is casual protection only.</p>
+  </div>
+</div>
+<script>
+"use strict";
+// PIN is checked client-side only (SHA-256 hash). Casual protection only.
+var PIN_HASH = "cfd31842af496ce21ae1460a2146075811315a9cf6b21abd8a848292ca91e76e";
+var DATA_URL = "./board.json";
+var REFRESH_MS = 5 * 60 * 1000;
+var EV_FLAG = "+EV >=2%";
+
+var activeGame = "all";
+var refreshTimer = null;
+var hasLoaded = false;
+
+function $(id) { return document.getElementById(id); }
+
+async function sha256Hex(text) {
+  var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(function (b) {
+    return b.toString(16).padStart(2, "0");
+  }).join("");
+}
+
+function shortGame(game) {
+  var parts = String(game || "").split(" @ ");
+  if (parts.length !== 2) return game;
+  var last = function (s) {
+    var w = String(s).trim().split(/\s+/);
+    return w[w.length - 1];
+  };
+  return last(parts[0]) + " @ " + last(parts[1]);
+}
+
+function fmtOdds(v) {
+  if (v === null || v === undefined || isNaN(Number(v))) return "—";
+  var n = Number(v);
+  return (n > 0 ? "+" : "") + n;
+}
+
+function fmtEv(v) {
+  if (v === null || v === undefined || isNaN(Number(v))) return null;
+  var n = Number(v);
+  return (n > 0 ? "+" : "") + n.toFixed(1) + "% EV";
+}
+
+function capFirst(s) {
+  s = String(s || "");
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+function cardHtml(r) {
+  var title = r.kind === "game" ? r.side : r.player;
+  var subtitle;
+  if (r.kind === "game") {
+    subtitle = capFirst(r.market);
+  } else {
+    subtitle = r.market + " · " + r.side + (r.line !== null && r.line !== undefined ? " " + r.line : "");
+  }
+  var badge = "";
+  if (r.bestBook && r.bestEv !== null && r.bestEv !== undefined) {
+    var evTxt = fmtEv(r.bestEv);
+    badge = '<div><span class="badge' + (r.bestEv > 0 ? " pos" : "") + '">' +
+      r.bestBook + " " + evTxt + "</span></div>";
+  }
+  var dkEv = fmtEv(r.dkEv);
+  var fdEv = fmtEv(r.fdEv);
+  var prices =
+    '<div class="prices">' +
+    '<div class="price' + (r.bestBook === "DraftKings" ? " best" : "") + '">' +
+    '<div class="book">DK</div><div class="odds">' + fmtOdds(r.dk) + "</div>" +
+    (dkEv ? '<div class="ev">' + dkEv + "</div>" : "") +
+    "</div>" +
+    '<div class="price' + (r.bestBook === "FanDuel" ? " best" : "") + '">' +
+    '<div class="book">FD</div><div class="odds">' + fmtOdds(r.fd) + "</div>" +
+    (fdEv ? '<div class="ev">' + fdEv + "</div>" : "") +
+    "</div></div>";
+  var hit = "";
+  if (r.bestEv !== null && r.bestEv !== undefined && r.bestEv > 0 &&
+      r.fairProb !== null && r.fairProb !== undefined) {
+    hit = '<div class="hitrate">Est. hit rate ' + (Number(r.fairProb) * 100).toFixed(1) + "%</div>";
+  }
+  var foot = '<div class="foot">' + r.game + "</div>";
+  if (r.anchor && r.anchor.length) {
+    foot += '<div class="foot">Anchor: ' + r.anchor.join(", ") + "</div>";
+  }
+  return '<div class="play"><div class="title">' + title + '</div>' +
+    '<div class="subtitle">' + subtitle + "</div>" +
+    badge + prices + hit + foot + "</div>";
+}
+
+function render(data) {
+  var rows = data.rows || [];
+  var games = [];
+  rows.forEach(function (r) {
+    if (games.indexOf(r.game) === -1) games.push(r.game);
+  });
+  if (activeGame !== "all" && games.indexOf(activeGame) === -1) activeGame = "all";
+
+  var chips = $("chips");
+  chips.innerHTML = "";
+  var allBtn = document.createElement("button");
+  allBtn.className = "chip" + (activeGame === "all" ? " active" : "");
+  allBtn.textContent = "All games";
+  allBtn.setAttribute("data-game", "all");
+  allBtn.addEventListener("click", function () { activeGame = "all"; render(data); });
+  chips.appendChild(allBtn);
+  games.forEach(function (g) {
+    var b = document.createElement("button");
+    b.className = "chip" + (activeGame === g ? " active" : "");
+    b.textContent = shortGame(g);
+    b.setAttribute("data-game", g);
+    b.addEventListener("click", function () { activeGame = g; render(data); });
+    chips.appendChild(b);
+  });
+
+  var filtered = activeGame === "all" ? rows : rows.filter(function (r) { return r.game === activeGame; });
+  var plays = filtered.filter(function (r) { return r.flag === EV_FLAG; })
+    .slice().sort(function (a, b) { return (b.bestEv || 0) - (a.bestEv || 0); });
+  var rest = filtered.filter(function (r) { return r.flag !== EV_FLAG; });
+
+  $("playsCount").textContent = plays.length ? "(" + plays.length + ")" : "";
+  $("restCount").textContent = rest.length ? "(" + rest.length + " lines)" : "";
+  $("plays").innerHTML = plays.length ? plays.map(cardHtml).join("") :
+    '<div class="empty">No +EV plays at +2% or better right now.</div>';
+  $("rest").innerHTML = rest.length ? rest.map(cardHtml).join("") :
+    '<div class="empty">Nothing else on the board for this filter.</div>';
+
+  $("snapshotLine").textContent = "Snapshot: " + (data.snapshotLabel || data.snapshotAt || "") || "Latest snapshot";
+  if (!data.snapshotLabel && !data.snapshotAt) $("snapshotLine").textContent = "Latest snapshot";
+  $("updatedLine").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+async function loadBoard() {
+  try {
+    var res = await fetch(DATA_URL + "?t=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+    hasLoaded = true;
+    $("status").textContent = "";
+    $("playsHeading").classList.remove("hidden");
+    $("restHeading").classList.remove("hidden");
+    render(data);
+  } catch (e) {
+    $("status").textContent = "Could not load board — retrying";
+    if (!hasLoaded) {
+      $("plays").innerHTML = '<div class="empty">Could not load board — retrying…</div>';
+      $("rest").innerHTML = "";
+    }
+  }
+}
+
+function unlock() {
+  $("gate").classList.add("hidden");
+  $("board").classList.remove("hidden");
+  loadBoard();
+  if (!refreshTimer) refreshTimer = setInterval(loadBoard, REFRESH_MS);
+}
+
+async function tryUnlock() {
+  var input = $("pin");
+  var pin = input.value.trim();
+  if (!pin) return;
+  var btn = $("unlockBtn");
+  btn.disabled = true;
+  $("pinError").textContent = "";
+  try {
+    var hash = await sha256Hex(pin);
+    if (hash === PIN_HASH) {
+      try { sessionStorage.setItem("sl-unlocked", "1"); } catch (e) {}
+      unlock();
+    } else {
+      $("pinError").textContent = "Wrong PIN, try again";
+      input.value = "";
+      input.focus();
+    }
+  } catch (e) {
+    $("pinError").textContent = "Wrong PIN, try again";
+    input.value = "";
+    input.focus();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("unlockBtn").addEventListener("click", tryUnlock);
+$("pin").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") tryUnlock();
+});
+
+(function init() {
+  try {
+    if (sessionStorage.getItem("sl-unlocked") === "1") { unlock(); return; }
+  } catch (e) {}
+  $("pin").focus();
+})();
+</script>
+</body>
+</html>
