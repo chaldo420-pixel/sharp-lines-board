@@ -17,6 +17,14 @@
 # persists the daily PropLine call counter in
 # requests_log.jsonl. Pushes made with GITHUB_TOKEN do not
 # re-trigger workflows, so this cannot loop.
+#
+# DEPLOY (Nov 20 2026): the site deploys by pushing the built
+# _site directory to the gh-pages branch (Pages source: "Deploy
+# from a branch", branch gh-pages, folder /). The old
+# deploy-pages action failed intermittently at its deploy step
+# (12:35, 2:30, 2:47, 3:15 PM ET) while the model and commit
+# steps always succeeded, leaving the live site stale. A plain
+# push to gh-pages has no deploy-API step to fail.
 
 name: Refresh Sharp Lines board
 
@@ -28,8 +36,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
   group: sharp-lines-refresh
@@ -65,14 +71,10 @@ jobs:
           mkdir -p _site
           cp index.html board.json _site/
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: _site
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          publish_branch: gh-pages
+          commit_message: "Deploy board snapshot ${{ github.sha }}"
