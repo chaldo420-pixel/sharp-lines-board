@@ -523,9 +523,12 @@ function render() {
   var comparable = filtered.filter(isComparable);
   var flagged = filtered.filter(function (r) { return r.flag === "line-differs"; });
 
-  // +EV plays (game chip only — tabs sit below the plays)
+  // +EV plays (game chip only — tabs sit below the plays).
+  // Same sharp-anchor rule as the alerts: a play must clear the
+  // threshold AND be sharp-anchored (2+ books, at least 1 sharp),
+  // so single-book and soft-only rows never look like plays.
   var plays = comparable.filter(function (r) {
-    return r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold;
+    return r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold && isSharpAnchored(r);
   }).slice().sort(function (a, b) { return (Number(b.bestEv) || 0) - (Number(a.bestEv) || 0); });
   $("thresholdNote").textContent = "+" + Number(threshold).toFixed(1) + "%";
   $("plays").innerHTML = plays.length
