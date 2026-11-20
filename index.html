@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sharp Lines</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b120e;
+    --surface: #141c16;
+    --surface-2: #1a251d;
+    --text: #edf2ed;
+    --dim: #8fa393;
+    --border: #243028;
+    --accent: #4ade80;
+    --accent-dim: #14532d;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+      --bg: #eef3ee;
+      --surface: #ffffff;
+      --surface-2: #f2f7f2;
+      --text: #12211a;
+      --dim: #5c6f60;
+      --border: #d3ded3;
+      --accent: #15803d;
+      --accent-dim: #dcfce7;
+      --warn: #b45309;
+      --bad: #b91c1c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 48rem; margin: 0 auto; padding: 0 16px 40px; }
+  h1, h2, h3, .display { font-family: "Archivo", system-ui, sans-serif; }
+
+  /* --- PIN gate --- */
+  .gate-wrap { max-width: 480px; margin: 0 auto; padding: 48px 16px 0; }
+  .gate-wrap h1 { font-size: 24px; font-weight: 800; margin: 4px 0 2px; }
+  .gate-sub { color: var(--dim); font-size: 14px; margin: 0 0 16px; }
+  .gate-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .gate-card input {
+    width: 100%; font-size: 20px; letter-spacing: 6px; text-align: center;
+    padding: 12px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); font-family: inherit; min-height: 2.25rem;
+  }
+  .gate-card input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .unlock-btn {
+    display: block; width: 100%; margin-top: 12px; font-size: 17px; font-weight: 700;
+    padding: 12px; border: 0; border-radius: 10px; background: var(--accent);
+    color: #0b120e; cursor: pointer; font-family: inherit; min-height: 2.25rem;
+  }
+  .unlock-btn:disabled { opacity: .55; cursor: default; }
+  .error { color: var(--bad); text-align: center; min-height: 20px; margin: 8px 0 0; font-size: 14px; }
+
+  /* --- header / meta row --- */
+  .top-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-top: 16px; font-size: 14px; color: var(--dim); }
+  .top-row .board-title { font-weight: 700; color: var(--text); font-size: 15px; }
+  .top-row .spacer { margin-left: auto; }
+  .refresh-btn {
+    border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); padding: 6px 12px; font-size: 14px; font-weight: 600;
+    cursor: pointer; font-family: inherit; min-height: 2.25rem; white-space: nowrap;
+  }
+  .refresh-btn:disabled { opacity: .55; cursor: default; }
+  .refresh-status { font-size: 14px; color: var(--dim); margin-top: 4px; min-height: 18px; }
+
+  /* --- filter chips --- */
+  .chips-label { font-size: 12px; font-weight: 600; color: var(--dim); margin: 16px 0 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border-radius: 999px; padding: 6px 14px; font-size: 14px; font-weight: 600; cursor: pointer;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); font-family: inherit;
+  }
+  .chip.active { background: var(--accent); border: 2px solid var(--accent); color: #0b120e; padding: 5px 13px; }
+
+  /* --- explainer card --- */
+  .explainer { margin-top: 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); padding: 14px; }
+  .explainer h2 { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+  .explainer p { font-size: 14px; color: var(--dim); margin: 0; line-height: 1.45; }
+
+  /* --- section headers --- */
+  .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 20px 0 0; }
+  .section-head h2 { font-size: 24px; font-weight: 800; margin: 0; }
+  .section-head h2.rest { font-size: 18px; font-weight: 700; color: var(--dim); }
+  .section-head .head-note { font-size: 14px; color: var(--dim); text-align: right; }
+  .section-head .head-note b { color: var(--text); }
+  .section-sub { font-size: 14px; color: var(--dim); margin: 4px 0 0; }
+  .empty { color: var(--dim); font-size: 14px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin-top: 12px; }
+
+  /* --- PlayCards --- */
+  .plays { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .play {
+    border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--surface); padding: 14px;
+  }
+  .play.featured { background: var(--surface-2); border: 2px solid var(--accent); }
+  .play-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .play-top .left { min-width: 0; }
+  .play-top h3 { font-size: 16px; font-weight: 700; line-height: 1.25; margin: 0; }
+  .play.featured .play-top h3 { font-size: 20px; }
+  .play-sub { margin-top: 2px; font-size: 14px; color: var(--dim); }
+  .ev-wrap { flex-shrink: 0; text-align: right; }
+  .ev-badge { font-family: "Archivo", system-ui, sans-serif; font-weight: 800; line-height: 1; font-size: 20px; }
+  .play.featured .ev-badge { font-size: 34px; }
+  .ev-badge.big { font-size: 34px; }
+  .ev-badge.accent { color: var(--accent); }
+  .ev-badge.bad { color: var(--bad); }
+  .ev-badge.warn { color: var(--warn); }
+  .ev-caption { font-size: 12px; color: var(--dim); margin-top: 4px; }
+
+  .price-grid { margin-top: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+  .cell { border-radius: 8px; background: var(--bg); border: 1px solid transparent; padding: 8px 4px; min-width: 0; }
+  .cell.best { border: 2px solid var(--accent); }
+  .cell .cell-label { font-size: 12px; font-weight: 600; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell.best .cell-label { color: var(--accent); }
+  .cell .cell-odds { font-family: "Archivo", system-ui, sans-serif; font-weight: 700; font-size: 18px; margin-top: 2px; }
+  .cell .cell-sub { font-size: 12px; color: var(--dim); margin-top: 2px; }
+
+  .hitrate { margin-top: 8px; font-size: 14px; font-weight: 600; color: var(--accent); }
+  .hitrate span { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--dim); }
+  .anchor-note { margin-top: 8px; font-size: 12px; color: var(--dim); line-height: 1.45; }
+
+  /* --- kind tabs --- */
+  .tabs { margin-top: 24px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tab {
+    border-radius: 999px; padding: 6px 14px; font-size: 14px; font-weight: 600; cursor: pointer;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); font-family: inherit;
+  }
+  .tab.active { background: var(--accent); color: #0b120e; border: 1px solid var(--border); }
+
+  /* --- BoardRows --- */
+  .rows { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .row {
+    border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--surface); padding: 12px 14px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .row .left { min-width: 0; flex: 1; }
+  .row .row-title { font-weight: 600; font-size: 15px; line-height: 1.3; }
+  .row .row-sub { font-size: 14px; color: var(--dim); margin-top: 1px; }
+  .row .row-line { font-size: 12px; color: var(--dim); margin-top: 2px; }
+  .row .row-anchor { font-size: 12px; color: var(--dim); margin-top: 2px; }
+  .row .row-hit { font-size: 12px; font-weight: 600; color: var(--accent); margin-top: 2px; }
+  .row .ev-badge { font-size: 20px; }
+
+  /* --- flagged rows --- */
+  .flagged-head { color: var(--warn); }
+  .flag-row { border-color: var(--warn); }
+  .flag-pill {
+    flex-shrink: 0; font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 999px;
+    color: var(--warn); border: 1px solid var(--warn); white-space: nowrap;
+  }
+
+  /* --- alerts card --- */
+  .alerts-card { margin-top: 32px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); padding: 16px; }
+  .alerts-card h2 { font-size: 18px; font-weight: 800; margin: 0; }
+  .alerts-card p { font-size: 14px; color: var(--dim); margin: 6px 0 0; line-height: 1.5; }
+  .alert-controls { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+  .alert-controls label { font-size: 14px; color: var(--dim); }
+  .alert-controls input[type="number"] {
+    width: 80px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg);
+    color: var(--text); padding: 6px 8px; font-size: 14px; font-family: inherit; min-height: 2.25rem;
+  }
+  .save-btn {
+    border-radius: 999px; padding: 6px 16px; font-weight: 700; font-size: 14px;
+    background: var(--accent); color: #0b120e; border: 0; cursor: pointer; font-family: inherit; min-height: 2.25rem;
+  }
+  .save-btn:disabled { opacity: .4; cursor: default; }
+  .alerts-count { font-size: 14px; color: var(--dim); margin-top: 10px; }
+
+  .footer { font-size: 12px; color: var(--dim); margin-top: 32px; line-height: 1.5; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="gate" class="gate-wrap">
+  <h1>Sharp Lines</h1>
+  <p class="gate-sub">Enter PIN to view the board</p>
+  <div class="gate-card">
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••••••" maxlength="32">
+    <button id="unlockBtn" class="unlock-btn">Unlock</button>
+    <p class="error" id="pinError"></p>
+  </div>
+</div>
+
+<main id="board" class="hidden">
+  <div class="top-row">
+    <span class="board-title">Tonight&rsquo;s board &mdash; DraftKings + FanDuel</span>
+    <span id="snapshotLabel"></span>
+    <span id="updatedLine"></span>
+    <span class="spacer"></span>
+    <button id="refreshBtn" class="refresh-btn">&#8635; Refresh live</button>
+  </div>
+  <p class="refresh-status" id="refreshStatus"></p>
+
+  <div class="chips-label">Filter by game</div>
+  <div class="chips" id="chips" role="group" aria-label="Filter by game"></div>
+
+  <div class="explainer">
+    <h2>Player props &mdash; straight main O/U lines &middot; DraftKings + FanDuel</h2>
+    <p>Main .5 lines near &minus;110, Over and Under, DraftKings and FanDuel side by side against the same fair price. Alt lines are NOT on this board. A prop&rsquo;s fair price is a consensus anchor excluding both DraftKings and FanDuel.</p>
+  </div>
+
+  <div class="section-head">
+    <h2>+EV plays</h2>
+    <span class="head-note">best of DK / FD at <b id="thresholdNote">+2.0%</b> or better</span>
+  </div>
+  <div class="plays" id="plays"></div>
+
+  <div class="tabs" id="tabs" role="tablist" aria-label="Filter lines"></div>
+
+  <div id="restSection">
+    <div class="section-head">
+      <h2 class="rest" id="restHeading">Rest of the board &mdash; DraftKings + FanDuel</h2>
+    </div>
+    <p class="section-sub hidden" id="restSub">Standard .5 lines, Over and Under &mdash; no alt lines in this list. Fair price is the sharp consensus anchor at the same line.</p>
+    <div class="rows" id="rest"></div>
+  </div>
+
+  <div id="flaggedSection">
+    <div class="section-head">
+      <h2 class="rest flagged-head" id="flaggedHeading">Flagged &mdash; line differs</h2>
+    </div>
+    <div class="rows" id="flagged"></div>
+  </div>
+
+  <div class="alerts-card">
+    <h2>Alerts</h2>
+    <p>One alert per line at or above your threshold, best book first. Prop alerts also require a sharp anchor of at least 2 books including Pinnacle, Novig, ProphetX, BetOnline, Circa, BookMaker, Kalshi, Polymarket, or Sporttrade. The board refreshes every 15 minutes, 8 AM&ndash;11 PM ET. Chat alerts come from the watcher that reads this board.</p>
+    <div class="alert-controls">
+      <label>Alert me at EV of&nbsp; + <input id="thresholdInput" type="number" min="0" max="50" step="0.5" value="2"> %</label>
+      <button id="saveThreshold" class="save-btn" disabled>Save</button>
+    </div>
+    <p class="alerts-count" id="alertsCount"></p>
+  </div>
+
+  <p class="footer">Game lines: Pinnacle no-vig vs DraftKings / FanDuel at the same line only &mdash; a different number is a different bet. Props: consensus fair price excluding both books. Alt lines are not on this board. Fair prices from Pinnacle (game lines) and a sharp-book consensus (props). PIN is casual protection only.</p>
+</main>
+
+<script>
+"use strict";
+// PIN is checked client-side only (SHA-256 hash). Casual protection only.
+var PIN_HASH = "27aa85d9579166a014c206c41971b23eadb20ac6a42aca4a88f7e64cf25fa6a2";
+var DATA_URL = "./board.json";
+var REFRESH_MS = 5 * 60 * 1000;
+
+var SHARP_BOOKS = ["pinnacle", "novig", "prophetx", "betonline", "bookmaker", "circa", "kalshi", "polymarket", "sporttrade"];
+var SHORT_NAMES = {
+  "Golden State Warriors": "Warriors", "Memphis Grizzlies": "Grizzlies",
+  "Portland Trail Blazers": "Blazers", "Milwaukee Bucks": "Bucks",
+  "New York Knicks": "Knicks", "Minnesota Timberwolves": "Timberwolves",
+  "LA Clippers": "Clippers", "San Antonio Spurs": "Spurs"
+};
+var TABS = [
+  { id: "all", label: "All" },
+  { id: "game", label: "Game lines" },
+  { id: "props", label: "Props \u2014 straight main O/U" },
+  { id: "flagged", label: "Flagged" }
+];
+
+var data = null;
+var activeGame = "all";
+var activeTab = "all";
+var threshold = 2.0;
+var refreshTimer = null;
+var hasLoaded = false;
+
+try {
+  var saved = localStorage.getItem("sl-threshold");
+  if (saved !== null && !isNaN(Number(saved))) threshold = Number(saved);
+} catch (e) {}
+
+function $(id) { return document.getElementById(id); }
+
+async function sha256Hex(text) {
+  var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(function (b) {
+    return b.toString(16).padStart(2, "0");
+  }).join("");
+}
+
+function shortTeam(name) {
+  var n = String(name || "").trim();
+  if (SHORT_NAMES[n]) return SHORT_NAMES[n];
+  var w = n.split(/\s+/);
+  return w[w.length - 1];
+}
+
+function shortGame(game) {
+  var parts = String(game || "").split(" @ ");
+  if (parts.length !== 2) return game;
+  return shortTeam(parts[0]) + " @ " + shortTeam(parts[1]);
+}
+
+function capFirst(s) {
+  s = String(s || "");
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+function fmtAmerican(v) {
+  if (v === null || v === undefined || isNaN(Number(v))) return "\u2014";
+  var n = Number(v);
+  return (n > 0 ? "+" : "") + Math.round(n);
+}
+
+function fmtPct(v) {
+  if (v === null || v === undefined || isNaN(Number(v))) return null;
+  var n = Number(v);
+  return (n > 0 ? "+" : "") + n.toFixed(1) + "%";
+}
+
+function fmtEv(v) {
+  var p = fmtPct(v);
+  return p === null ? null : p + " EV";
+}
+
+function impliedPct(odds) {
+  if (odds === null || odds === undefined || isNaN(Number(odds))) return null;
+  var n = Number(odds);
+  if (n < 0) return (-n / (-n + 100)) * 100;
+  return (100 / (n + 100)) * 100;
+}
+
+// Fair American odds derived from the model's fair probability.
+function fairAmerican(p) {
+  if (p === null || p === undefined || isNaN(Number(p))) return null;
+  var f = Number(p);
+  if (f <= 0 || f >= 1) return null;
+  if (f >= 0.5) return Math.round(-(f / (1 - f)) * 100);
+  return Math.round(((1 - f) / f) * 100);
+}
+
+function fairProbPct(p) {
+  if (p === null || p === undefined || isNaN(Number(p))) return null;
+  return (Number(p) * 100).toFixed(1) + "%";
+}
+
+function rowTitle(r) {
+  if (r.kind === "game") return r.side;
+  var line = (r.line !== null && r.line !== undefined) ? " " + r.line : "";
+  return r.player + " \u2014 " + r.market + " " + r.side + line;
+}
+
+function rowSubtitle(r) {
+  if (r.kind === "game") return shortGame(r.game) + " \u00b7 " + capFirst(r.market);
+  return shortGame(r.game) + " \u00b7 Player prop \u2014 straight main O/U | " + r.market +
+    " \u00b7 Best: " + (r.bestBook || "\u2014");
+}
+
+function isThinAnchor(r) {
+  // Thin = the alert rests on ONE sharp book plus a filler that
+  // does not set the price (Nov 20 2026, George). A 2-sharp
+  // anchor is a real two-source consensus, not thin. Derived
+  // from the full anchor list, which the watcher still gates on.
+  if (r.kind !== "prop") return false;
+  var a = r.anchor || [];
+  if (a.length !== 2) return false;
+  var sharps = 0;
+  a.forEach(function (b) {
+    if (SHARP_BOOKS.indexOf(String(b).toLowerCase()) !== -1) sharps++;
+  });
+  return sharps === 1;
+}
+
+function anchorLabel(r) {
+  if (r.kind === "game") return "Pinnacle (no-vig)";
+  // Show only the books that actually set the fair price
+  // (anchorDisplay); fall back to the full anchor for snapshots
+  // built before it existed.
+  var a = (r.anchorDisplay && r.anchorDisplay.length) ? r.anchorDisplay : (r.anchor || []);
+  if (!a.length || a[0] === "none") return "None \u2014 no consensus anchor";
+  var label = a.join(", ");
+  if (isThinAnchor(r)) label += " \u00b7 thin";
+  return label;
+}
+
+function evBadgeHtml(ev, big) {
+  if (ev === null || ev === undefined || isNaN(Number(ev))) {
+    return '<div class="ev-badge warn' + (big ? " big" : "") + '">NO EV</div>';
+  }
+  var n = Number(ev);
+  var cls = n >= 2 ? "accent" : (n >= 0 ? "" : "bad");
+  return '<div class="ev-badge ' + cls + (big ? " big" : "") + '">' + fmtPct(n) + "</div>";
+}
+
+function bookCellHtml(book, odds, ev, isBest) {
+  var label = book + (isBest ? " \u2605 best" : "");
+  var sub;
+  if (odds === null || odds === undefined) {
+    sub = "no price \u00b7 EV \u2014";
+  } else {
+    var imp = impliedPct(odds);
+    sub = (imp === null ? "\u2014" : imp.toFixed(1) + "% implied") + " \u00b7 EV " +
+      (ev === null || ev === undefined ? "\u2014" : fmtPct(ev));
+  }
+  return '<div class="cell' + (isBest ? " best" : "") + '">' +
+    '<div class="cell-label">' + label + "</div>" +
+    '<div class="cell-odds">' + fmtAmerican(odds) + "</div>" +
+    '<div class="cell-sub">' + sub + "</div></div>";
+}
+
+function fairCellHtml(r) {
+  var label = r.kind === "game" ? "Pinnacle fair" : "Fair (consensus)";
+  var fa = fairAmerican(r.fairProb);
+  var sub = r.fairProb === null || r.fairProb === undefined ? "\u2014" : fairProbPct(r.fairProb) + " true";
+  return '<div class="cell">' +
+    '<div class="cell-label">' + label + "</div>" +
+    '<div class="cell-odds">' + fmtAmerican(fa) + "</div>" +
+    '<div class="cell-sub">' + sub + "</div></div>";
+}
+
+function hitRateHtml(r) {
+  if (r.bestEv === null || r.bestEv === undefined || Number(r.bestEv) <= 0 ||
+      r.fairProb === null || r.fairProb === undefined) return "";
+  return '<div class="hitrate">Est. hit rate ' + fairProbPct(r.fairProb) + "</div>";
+}
+
+function playCardHtml(r, featured) {
+  var title = rowTitle(r);
+  var badge = '<div class="ev-wrap">' + evBadgeHtml(r.bestEv, featured) +
+    '<div class="ev-caption">best EV \u00b7 ' + (r.bestBook || "\u2014") + "</div></div>";
+  var grid = '<div class="price-grid">' +
+    bookCellHtml("DraftKings", r.dk, r.dkEv, r.bestBook === "DraftKings") +
+    bookCellHtml("FanDuel", r.fd, r.fdEv, r.bestBook === "FanDuel") +
+    fairCellHtml(r) + "</div>";
+  var hit = hitRateHtml(r);
+  if (hit && r.kind === "prop") {
+    hit = '<div class="hitrate">Est. hit rate ' + fairProbPct(r.fairProb) +
+      '<span>\u2014 model\u2019s fair probability for this line</span></div>';
+  }
+  var foot = "";
+  if (r.kind === "prop") {
+    foot = '<div class="anchor-note">Straight main O/U line \u2014 fair price is the consensus anchor (' +
+      anchorLabel(r) + ") at the same line, excluding both DraftKings and FanDuel.</div>";
+  }
+  return '<article class="play' + (featured ? " featured" : "") + '">' +
+    '<div class="play-top"><div class="left"><h3>' + title + "</h3>" +
+    '<div class="play-sub">' + rowSubtitle(r) + "</div></div>" + badge + "</div>" +
+    grid + hit + foot + "</article>";
+}
+
+function boardRowHtml(r) {
+  function seg(book, odds, ev) {
+    if (odds === null || odds === undefined) return book + " \u2014";
+    var e = (ev === null || ev === undefined) ? "\u2014" : fmtPct(ev);
+    return book + " " + fmtAmerican(odds) + " (" + e + ")";
+  }
+  var line = seg("DK", r.dk, r.dkEv) + " \u00b7 " + seg("FD", r.fd, r.fdEv) +
+    " \u00b7 Fair " + fmtAmerican(fairAmerican(r.fairProb)) +
+    " \u00b7 Best: " + (r.bestBook || "\u2014");
+  var anchor = '<div class="row-anchor">Anchor: ' + anchorLabel(r) +
+    (r.kind === "prop" && r.anchor && r.anchor[0] !== "none" ? " \u2014 consensus fair price, excludes DraftKings &amp; FanDuel" : "") + "</div>";
+  var hit = "";
+  if (r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) > 0 &&
+      r.fairProb !== null && r.fairProb !== undefined) {
+    hit = '<div class="row-hit">Est. hit rate ' + fairProbPct(r.fairProb) + "</div>";
+  }
+  return '<article class="row"><div class="left"><div class="row-title">' + rowTitle(r) + "</div>" +
+    '<div class="row-sub">' + rowSubtitle(r) + "</div>" +
+    '<div class="row-line">' + line + "</div>" + anchor + hit + "</div>" +
+    '<div class="ev-wrap">' + evBadgeHtml(r.bestEv, false) + "</div></article>";
+}
+
+function flaggedRowHtml(r) {
+  return '<article class="row flag-row"><div class="left"><div class="row-title">' + rowTitle(r) + "</div>" +
+    '<div class="row-sub">' + shortGame(r.game) + " \u00b7 DraftKings line differs from Pinnacle \u2014 not compared, a different number is a different bet.</div>" +
+    '<div class="row-anchor">Anchor: ' + anchorLabel(r) + "</div></div>" +
+    '<span class="flag-pill">LINE DIFFERS</span></article>';
+}
+
+function isComparable(r) { return r.flag !== "line-differs"; }
+
+function isSharpAnchored(r) {
+  if (r.kind === "game") return true; // Pinnacle-anchored
+  var a = r.anchor || [];
+  if (a.length < 2) return false;
+  return a.some(function (b) { return SHARP_BOOKS.indexOf(String(b).toLowerCase()) !== -1; });
+}
+
+function render() {
+  if (!data) return;
+  var rows = data.rows || [];
+  if (data.thresholdPct !== null && data.thresholdPct !== undefined && !isNaN(Number(data.thresholdPct))) {
+    // default threshold comes from the snapshot unless the user saved their own
+    try {
+      if (localStorage.getItem("sl-threshold") === null) threshold = Number(data.thresholdPct);
+    } catch (e) { threshold = Number(data.thresholdPct); }
+  }
+
+  // game chips
+  var games = [];
+  rows.forEach(function (r) { if (games.indexOf(r.game) === -1) games.push(r.game); });
+  if (activeGame !== "all" && games.indexOf(activeGame) === -1) activeGame = "all";
+  var chips = $("chips");
+  chips.innerHTML = "";
+  function chip(label, value) {
+    var b = document.createElement("button");
+    b.className = "chip" + (activeGame === value ? " active" : "");
+    b.textContent = label;
+    b.addEventListener("click", function () { activeGame = value; render(); });
+    chips.appendChild(b);
+  }
+  chip("All games", "all");
+  games.forEach(function (g) { chip(shortGame(g), g); });
+
+  var filtered = activeGame === "all" ? rows : rows.filter(function (r) { return r.game === activeGame; });
+  var comparable = filtered.filter(isComparable);
+  var flagged = filtered.filter(function (r) { return r.flag === "line-differs"; });
+
+  // +EV plays (game chip only — tabs sit below the plays)
+  var plays = comparable.filter(function (r) {
+    return r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold;
+  }).slice().sort(function (a, b) { return (Number(b.bestEv) || 0) - (Number(a.bestEv) || 0); });
+  $("thresholdNote").textContent = "+" + Number(threshold).toFixed(1) + "%";
+  $("plays").innerHTML = plays.length
+    ? plays.map(function (r, i) { return playCardHtml(r, i === 0); }).join("")
+    : '<div class="empty">Nothing clears +' + Number(threshold).toFixed(1) + "% in this view right now\u2026</div>";
+
+  // kind tabs
+  var tabs = $("tabs");
+  tabs.innerHTML = "";
+  TABS.forEach(function (t) {
+    var b = document.createElement("button");
+    b.className = "tab" + (activeTab === t.id ? " active" : "");
+    b.textContent = t.label;
+    b.setAttribute("role", "tab");
+    b.addEventListener("click", function () { activeTab = t.id; render(); });
+    tabs.appendChild(b);
+  });
+
+  // rest of the board
+  var rest = comparable.filter(function (r) {
+    return !(r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold);
+  });
+  if (activeTab === "game") rest = rest.filter(function (r) { return r.kind === "game"; });
+  if (activeTab === "props") rest = rest.filter(function (r) { return r.kind === "prop"; });
+  rest.sort(function (a, b) {
+    var av = (a.bestEv === null || a.bestEv === undefined) ? -Infinity : Number(a.bestEv);
+    var bv = (b.bestEv === null || b.bestEv === undefined) ? -Infinity : Number(b.bestEv);
+    return bv - av;
+  });
+  var restSection = $("restSection");
+  if (activeTab === "flagged") {
+    restSection.classList.add("hidden");
+  } else {
+    restSection.classList.remove("hidden");
+    $("restHeading").textContent = activeTab === "props"
+      ? "Player props \u2014 straight main O/U lines"
+      : "Rest of the board \u2014 DraftKings + FanDuel";
+    $("restSub").classList.toggle("hidden", activeTab !== "props");
+    $("rest").innerHTML = rest.length
+      ? rest.map(boardRowHtml).join("")
+      : '<div class="empty">Nothing else on the board for this filter.</div>';
+  }
+
+  // flagged
+  var flaggedSection = $("flaggedSection");
+  if (activeTab === "props" || !flagged.length) {
+    flaggedSection.classList.add("hidden");
+  } else {
+    flaggedSection.classList.remove("hidden");
+    $("flaggedHeading").textContent = "Flagged \u2014 line differs (" + flagged.length + ")";
+    $("flagged").innerHTML = flagged.map(flaggedRowHtml).join("");
+  }
+
+  // alerts count
+  var alertable = comparable.filter(function (r) {
+    return r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold && isSharpAnchored(r);
+  }).length;
+  $("alertsCount").textContent = alertable + " line" + (alertable === 1 ? "" : "s") +
+    " clear" + (alertable === 1 ? "s" : "") + " +" + Number(threshold).toFixed(1) + "% right now.";
+  $("thresholdInput").value = threshold;
+
+  $("snapshotLabel").textContent = data.snapshotLabel || data.snapshotAt || "";
+  $("updatedLine").textContent = "\u00b7 Updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+async function loadBoard(manual) {
+  var status = $("refreshStatus");
+  var btn = $("refreshBtn");
+  if (manual) { status.textContent = "Refreshing\u2026"; btn.disabled = true; }
+  try {
+    var res = await fetch(DATA_URL + "?t=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    data = await res.json();
+    hasLoaded = true;
+    status.textContent = "";
+    render();
+  } catch (e) {
+    status.textContent = "Could not load board \u2014 retrying";
+    if (!hasLoaded) {
+      $("plays").innerHTML = '<div class="empty">Could not load board \u2014 retrying\u2026</div>';
+    }
+  } finally {
+    if (manual) btn.disabled = false;
+  }
+}
+
+function unlock() {
+  $("gate").classList.add("hidden");
+  $("board").classList.remove("hidden");
+  loadBoard(false);
+  if (!refreshTimer) refreshTimer = setInterval(function () { loadBoard(false); }, REFRESH_MS);
+}
+
+async function tryUnlock() {
+  var input = $("pin");
+  var pin = input.value.trim();
+  if (!pin) return;
+  var btn = $("unlockBtn");
+  btn.disabled = true;
+  $("pinError").textContent = "";
+  try {
+    var hash = await sha256Hex(pin);
+    if (hash === PIN_HASH) {
+      try { sessionStorage.setItem("sl-unlocked", "1"); } catch (e) {}
+      unlock();
+    } else {
+      $("pinError").textContent = "Wrong PIN, try again";
+      input.value = "";
+      input.focus();
+    }
+  } catch (e) {
+    $("pinError").textContent = "Wrong PIN, try again";
+    input.value = "";
+    input.focus();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("unlockBtn").addEventListener("click", tryUnlock);
+$("pin").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") tryUnlock();
+});
+$("refreshBtn").addEventListener("click", function () { loadBoard(true); });
+
+var saveBtn = $("saveThreshold");
+$("thresholdInput").addEventListener("input", function () { saveBtn.disabled = false; });
+saveBtn.addEventListener("click", function () {
+  var v = Number($("thresholdInput").value);
+  if (isNaN(v) || v < 0) v = 0;
+  if (v > 50) v = 50;
+  threshold = v;
+  try { localStorage.setItem("sl-threshold", String(v)); } catch (e) {}
+  saveBtn.disabled = true;
+  render();
+});
+
+(function init() {
+  try {
+    if (sessionStorage.getItem("sl-unlocked") === "1") { unlock(); return; }
+  } catch (e) {}
+  $("pin").focus();
+})();
+</script>
+</body>
+</html>
