@@ -154,8 +154,10 @@ class TestProps(unittest.TestCase):
         # non-fallback core first; soft books fill ONLY up to
         # the 2-book minimum, in canonical anchor order.
         # Core already has 2 books (no sharp): no fallback used.
+        # (ProphetX is sharp since the Nov 20 2026 fitted weights,
+        # so the no-sharp core here is Hard Rock + Caesars.)
         books = {"Hard Rock Bet": (-110, -120),
-                 "ProphetX": (-112, -108),
+                 "Caesars": (-112, -108),
                  "BetMGM": (-115, -105)}
         _f, n, anchor_books, flag, _display = consensus_fair_prob(books)
         self.assertEqual(n, 2)
@@ -246,14 +248,18 @@ class TestProps(unittest.TestCase):
     def test_display_anchor_shows_soft_book_at_median(self):
         # 1 sharp + 2 weight-1 books: when a soft book genuinely
         # sits at the median it DID move the price, so it IS shown.
-        # Kalshi 0.5, Bovada ~0.457, Hard Rock ~0.438: expanded
+        # Kalshi 0.5, Caesars ~0.457, Hard Rock ~0.438: expanded
         # [0.438, 0.457, 0.5, 0.5] -> median (0.457+0.5)/2.
+        # (Bovada would also sit at 0.457, but it is excluded
+        # from the anchor outright — fitted weights, Nov 20 2026.)
         _f, n, _b, flag, display = consensus_fair_prob(
-            {"Kalshi": (-110, -110), "Bovada": (110, -130),
+            {"Kalshi": (-110, -110), "Caesars": (110, -130),
              "Hard Rock Bet": (120, -140)})
         self.assertEqual(n, 3)
         self.assertEqual(flag, "sharp anchor")
-        self.assertEqual(display, ["Bovada", "Kalshi"])
+        # Display order is canonical anchor order (Kalshi before
+        # Caesars), not alphabetical.
+        self.assertEqual(display, ["Kalshi", "Caesars"])
 
     def test_display_anchor_two_and_three_sharps(self):
         # Two sharp books at the same price: both set it.
@@ -265,6 +271,76 @@ class TestProps(unittest.TestCase):
             {"Kalshi": (-110, -110), "Novig": (-130, 110),
              "Circa": (110, -130)})
         self.assertEqual(display, ["Kalshi"])
+
+    def test_fitted_weights_prophetx_and_betonline_are_sharp(self):
+        # Fitted weights (Nov 20 2026): ProphetX (realized 0.40)
+        # and BetOnline (0.23) are sharp — they were weight 1
+        # before, which underweighted the two sharpest measured
+        # books in the feed. Each plus a soft filler is a thin
+        # sharp anchor, not a soft consensus.
+        for book in ("ProphetX", "BetOnline"):
+            _f, n, anchor_books, flag, _d = consensus_fair_prob(
+                {book: (-110, -110), "BetMGM": (-115, -105)})
+            self.assertEqual(n, 2)
+            self.assertIn(book, anchor_books)
+            self.assertEqual(flag, "thin sharp anchor")
+
+    def test_fitted_weights_pinnacle_votes_at_weight_3(self):
+        # Pinnacle (Nov 20 2026 correction: it DOES post props,
+        # best calibrated at 50.1% predicted vs 49.5% actual)
+        # votes at weight 3: its price outvotes two weight-1
+        # books pulling the other way. Pinnacle 0.5 vs two books
+        # at ~0.625: expanded [0.5, 0.5, 0.5, 0.625, 0.625] ->
+        # median 0.5, display Pinnacle only.
+        books = {"Pinnacle": (-110, -110),
+                 "Caesars": (-200, 150), "Hard Rock Bet": (-200, 150)}
+        fair, n, anchor_books, flag, display = consensus_fair_prob(books)
+        self.assertEqual(n, 3)
+        self.assertEqual(flag, "sharp anchor")
+        self.assertIn("Pinnacle", anchor_books)
+        self.assertAlmostEqual(fair, 0.5, delta=0.01)
+        self.assertEqual(display, ["Pinnacle"])
+
+    def test_fitted_weights_bovada_excluded_from_anchor(self):
+        # Bovada is the softest book in the feed (realized 1.10,
+        # highest avgClv) — it is out of the anchor entirely, not
+        # even as filler. Bovada + a sharp book leaves a
+        # single-book anchor; Bovada + a fallback leaves only
+        # the fallback.
+        _f, n, anchor_books, flag, _d = consensus_fair_prob(
+            {"Bovada": (-110, -110), "Kalshi": (-110, -110)})
+        self.assertEqual(n, 1)
+        self.assertEqual(anchor_books, ["Kalshi"])
+        self.assertEqual(flag, "single-book anchor — do not alert")
+        _f, n, anchor_books, flag, _d = consensus_fair_prob(
+            {"Bovada": (-110, -110), "BetMGM": (-115, -105)})
+        self.assertEqual(n, 1)
+        self.assertEqual(anchor_books, ["BetMGM"])
+
+    def test_pinnacle_prop_column_parsed(self):
+        # parse_props must keep Pinnacle's prop prices (pn_over /
+        # pn_under) — the feed returns them and the anchor needs
+        # them at weight 3.
+        from fetch_propline import parse_props
+        payload = {"bookmakers": [
+            {"key": "draftkings", "markets": [
+                {"key": "player_points", "line_type": "main",
+                 "outcomes": [
+                     {"name": "Over", "description": "Test Player",
+                      "point": 21.5, "price": -110},
+                     {"name": "Under", "description": "Test Player",
+                      "point": 21.5, "price": -110}]}]},
+            {"key": "pinnacle", "markets": [
+                {"key": "player_points", "line_type": "main",
+                 "outcomes": [
+                     {"name": "Over", "description": "Test Player",
+                      "point": 21.5, "price": -115},
+                     {"name": "Under", "description": "Test Player",
+                      "point": 21.5, "price": -105}]}]}]}
+        rows = parse_props(payload, "Test Game")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["pn_over"], -115)
+        self.assertEqual(rows[0]["pn_under"], -105)
 
     def test_prop_line_difference_is_different_bet(self):
         # compare_prop with a fair-prob override is the sample path;

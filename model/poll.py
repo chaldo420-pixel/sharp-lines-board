@@ -245,10 +245,12 @@ def _prop_alertable(row):
 
     Game rows (no "player") are Pinnacle-anchored and are not
     gated here. A prop row alerts only when its anchor has
-    >= 2 books AND at least one sharp book (Circa, BookMaker,
-    Kalshi, Polymarket, Novig). A soft-book-only consensus —
-    e.g. BetMGM alone — is GemFinder in different clothes and
-    never alerts, however high its EV looks (Nov 19 2026).
+    >= 2 books AND at least one sharp book (Pinnacle, Novig,
+    ProphetX, BetOnline, Circa, BookMaker, Kalshi, Polymarket,
+    Sporttrade — weight >= 2 in the fitted-weights table).
+    A soft-book-only consensus — e.g. BetMGM alone — is
+    GemFinder in different clothes and never alerts, however
+    high its EV looks (Nov 19 2026).
     """
     if not row.get("player"):
         return True
@@ -258,8 +260,9 @@ def _prop_alertable(row):
     if len(books) < 2:
         return False
     return any(s in b for b in books
-               for s in ("circa", "bookmaker", "kalshi",
-                         "polymarket", "novig"))
+               for s in ("pinnacle", "circa", "bookmaker", "kalshi",
+                         "polymarket", "novig", "prophetx",
+                         "betonline", "sporttrade"))
 
 
 def new_alerts(rows, seen):
@@ -339,9 +342,14 @@ def run_prop_rows(raw_rows, timestamp, source, bankroll=1000.0):
     out = []
     # Anchor excludes BOTH checked books (DraftKings and FanDuel).
     # Every other book PropLine returns at the same line goes in
-    # — sharp books (Circa, BookMaker, exchanges) are what make
-    # the anchor sharp; soft books widen the consensus only.
-    book_cols = (("Hard Rock Bet", "hr_over", "hr_under"),
+    # — sharp books (Pinnacle, Novig, ProphetX, BetOnline, Circa,
+    # BookMaker, exchanges) are what make the anchor sharp; soft
+    # books widen the consensus only. Bovada is not read here at
+    # all — it is excluded from the anchor (fitted weights, Nov 20
+    # 2026). Pinnacle props are read here (pn_over/pn_under);
+    # Pinnacle only votes where it prices the line.
+    book_cols = (("Pinnacle", "pn_over", "pn_under"),
+                 ("Hard Rock Bet", "hr_over", "hr_under"),
                  ("BookMaker", "bm_over", "bm_under"),
                  ("BetMGM", "mgm_over", "mgm_under"),
                  ("Circa", "ca_over", "ca_under"),

@@ -60,9 +60,10 @@ ALL_MARKETS = GAME_MARKETS + PROP_MARKETS
 
 # Bookmaker keys to request (where available). Titles are taken
 # from the API response when present; these are fallbacks.
-# SHARP ANCHOR (Nov 19 2026): the prop anchor must contain a
-# sharp source — Circa, BookMaker, or a near-zero-vig exchange
-# (Kalshi, Polymarket, Novig) — not just soft books. The extra
+# SHARP ANCHOR (Nov 20 2026, fitted weights): the prop anchor
+# must contain a sharp source — Pinnacle, Novig, ProphetX,
+# BetOnline (weight 3) or BookMaker, Circa, Kalshi, Polymarket,
+# Sporttrade (weight 2) — not just soft books. The extra
 # keys cost NO extra PropLine calls: they are a filter on the
 # same per-event odds response. Soft books are still fetched
 # (they widen the consensus), but a prop alert requires a
@@ -399,9 +400,9 @@ def parse_props(payload, game_label):
     Returns a list of dicts with keys: game, player, market,
     line, dk_over, dk_under, hr_over, hr_under, fd_over,
     fd_under, bm_over, bm_under, mgm_over, mgm_under, plus
-    one over/under pair per additional book (Circa, BetOnline,
-    Bovada, Kalshi, Polymarket, Novig, ProphetX, Sporttrade,
-    BetRivers, Caesars, Fanatics, bet365).
+    one over/under pair per additional book (Pinnacle, Circa,
+    BetOnline, Bovada, Kalshi, Polymarket, Novig, ProphetX,
+    Sporttrade, BetRivers, Caesars, Fanatics, bet365).
     Only markets with line_type == "main" are kept (alt lines
     dropped). The DraftKings line governs: other books are only
     used at the SAME line as DraftKings for that player/market.
@@ -435,7 +436,8 @@ def parse_props(payload, game_label):
             over_under[0 if side == "Over" else 1] = _american(oc["price"])
 
     rows = []
-    col = {"draftkings": ("dk_over", "dk_under"),
+    col = {"pinnacle": ("pn_over", "pn_under"),
+           "draftkings": ("dk_over", "dk_under"),
            "hard_rock_bet": ("hr_over", "hr_under"),
            "fanduel": ("fd_over", "fd_under"),
            "bookmaker": ("bm_over", "bm_under"),

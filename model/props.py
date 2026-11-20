@@ -83,11 +83,40 @@ from model import (american_to_decimal, decimal_to_american,
 # Consensus anchor
 # ------------------------------------------------------------------
 
-# Sharp books for props: the two sharp books that post NBA
-# props (Circa, BookMaker) plus the near-zero-vig exchanges.
+# Sharp books for props (Nov 20 2026, George approved the fitted
+# weights from GemFinder's by-book data pack): sharp = weight >= 2.
 # A prop anchor with none of these in it is a soft consensus
 # only — it never produces a +EV alert (see module docstring).
-SHARP_BOOKS = ("bookmaker", "circa", "kalshi", "polymarket", "novig")
+SHARP_BOOKS = ("pinnacle", "novig", "prophetx", "betonline",
+               "bookmaker", "circa", "kalshi", "polymarket",
+               "sporttrade")
+
+# Fitted anchor weights (Nov 20 2026, George approved Jake's
+# weights proposal; GemFinder by-book data, realized CLV
+# ascending, min strict n ~250 NBA). Weight 3: Pinnacle — best
+# calibrated reference (50.1% predicted vs 49.5% actual), thin
+# and late so it only votes where it prices the line — plus
+# Novig (0.37), ProphetX (0.40), BetOnline (0.23), the three
+# sharpest measured books. Weight 2: BookMaker, Circa, Kalshi,
+# Polymarket, Sporttrade (unmeasured in GemFinder's data — kept
+# on prior grounds: sharp books / exchanges). Weight 1:
+# everything else in the anchor. Books not listed here weigh 1.
+ANCHOR_WEIGHTS = {
+    "pinnacle": 3, "novig": 3, "prophetx": 3, "betonline": 3,
+    "bookmaker": 2, "circa": 2, "kalshi": 2, "polymarket": 2,
+    "sporttrade": 2,
+}
+
+
+def _anchor_weight(name):
+    return ANCHOR_WEIGHTS.get(str(name).strip().lower(), 1)
+
+
+# Books never in the anchor: the two checked books (circular —
+# DraftKings and FanDuel are the books being graded) and Bovada,
+# dropped Nov 20 2026 in the fitted-weights change — softest book
+# in the feed (realized CLV 1.10, highest avgClv of any major book).
+EXCLUDED_BOOKS = ("draftkings", "dk", "fanduel", "fd", "bovada")
 
 # Soft books that are FALLBACK-ONLY in the anchor (Nov 20 2026,
 # George: "do what you think is best"). They are excluded
@@ -100,24 +129,26 @@ SOFT_FALLBACK_BOOKS = ("betmgm", "betrivers", "fanatics")
 # the dashboard's ANCHOR_BOOK_KEYS): anchor_books are listed
 # in this order, and fallback books fill in this order.
 _ANCHOR_ORDER = {name: i for i, name in enumerate((
-    "hard rock bet", "bookmaker", "betmgm", "circa", "betonline",
-    "bovada", "kalshi", "polymarket", "novig", "prophetx",
-    "sporttrade", "betrivers", "caesars", "fanatics", "bet365"))}
+    "pinnacle", "hard rock bet", "bookmaker", "betmgm", "circa",
+    "betonline", "bovada", "kalshi", "polymarket", "novig",
+    "prophetx", "sporttrade", "betrivers", "caesars", "fanatics",
+    "bet365"))}
 
 
 def consensus_fair_prob(book_prices, method="multiplicative",
                         sharp_books=SHARP_BOOKS,
-                        excluded_books=("draftkings", "dk",
-                                        "fanduel", "fd")):
+                        excluded_books=EXCLUDED_BOOKS):
     """Median no-vig fair Over probability across non-checked books.
 
     book_prices: dict book_name -> (over_american, under_american)
     for the SAME player/market/line. Book names are matched
-    case-insensitively; sharp books (BookMaker, Circa, Kalshi,
-    Polymarket, Novig) get double weight in the median. Books in
-    `excluded_books` (DraftKings and FanDuel — both are checked
-    books) are never in the anchor, because that would be
-    circular.
+    case-insensitively; each book votes in the median with its
+    fitted weight (ANCHOR_WEIGHTS: Pinnacle, Novig, ProphetX,
+    BetOnline 3; BookMaker, Circa, Kalshi, Polymarket,
+    Sporttrade 2; everything else 1). Books in `excluded_books`
+    (DraftKings and FanDuel — both are checked books, so
+    including them would be circular — plus Bovada, too soft
+    to reference) are never in the anchor.
 
     Returns (fair_over_prob, n_books, anchor_books, flag,
     display_books). display_books are the books sitting at the
@@ -171,8 +202,7 @@ def consensus_fair_prob(book_prices, method="multiplicative",
     fair_overs = []
     anchor_books = []
     for name, fo in used:
-        weight = 2 if any(s in name.lower() for s in sharp_books) else 1
-        fair_overs.extend([fo] * weight)
+        fair_overs.extend([fo] * _anchor_weight(name))
         anchor_books.append(name)
 
     n = len(anchor_books)
