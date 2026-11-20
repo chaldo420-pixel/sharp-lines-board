@@ -110,6 +110,7 @@ GAME_FIELDS = ["game", "market", "side", "handicap", "pinnacle_handicap",
 PROP_FIELDS = ["game", "player", "market", "side", "line",
                "draftkings_american", "draftkings_decimal",
                "draftkings_implied_prob", "anchor", "anchor_books",
+               "anchor_display",
                "fair_prob", "fair_decimal", "fair_american",
                "ev_pct", "clv_pct", "kelly_full_stake",
                "kelly_quarter_stake", "flag",
@@ -132,7 +133,7 @@ PROP_FIELDS = ["game", "player", "market", "side", "line",
 # then (see the cron body).
 DASHBOARD_PROP_FIELDS = [f for f in PROP_FIELDS
                          if f not in ("clv_pct", "method",
-                                      "anchor_books",
+                                      "anchor_books", "anchor_display",
                                       "kelly_full_stake", "source")]
 
 

@@ -363,11 +363,31 @@ function rowSubtitle(r) {
     " \u00b7 Best: " + (r.bestBook || "\u2014");
 }
 
-function anchorLabel(r) {
+function isThinAnchor(r) {
+  // Thin = the alert rests on ONE sharp book plus a filler that
+  // does not set the price (Nov 20 2026, George). A 2-sharp
+  // anchor is a real two-source consensus, not thin. Derived
+  // from the full anchor list, which the watcher still gates on.
+  if (r.kind !== "prop") return false;
   var a = r.anchor || [];
+  if (a.length !== 2) return false;
+  var sharps = 0;
+  a.forEach(function (b) {
+    if (SHARP_BOOKS.indexOf(String(b).toLowerCase()) !== -1) sharps++;
+  });
+  return sharps === 1;
+}
+
+function anchorLabel(r) {
   if (r.kind === "game") return "Pinnacle (no-vig)";
+  // Show only the books that actually set the fair price
+  // (anchorDisplay); fall back to the full anchor for snapshots
+  // built before it existed.
+  var a = (r.anchorDisplay && r.anchorDisplay.length) ? r.anchorDisplay : (r.anchor || []);
   if (!a.length || a[0] === "none") return "None \u2014 no consensus anchor";
-  return a.join(", ");
+  var label = a.join(", ");
+  if (isThinAnchor(r)) label += " \u00b7 thin";
+  return label;
 }
 
 function evBadgeHtml(ev, big) {

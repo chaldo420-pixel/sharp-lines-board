@@ -35,6 +35,9 @@ def slim_row(r):
         "bestEv": r.get("bestEvPct"),
         "fairProb": r.get("fairProb"),
         "anchor": anchor_books(r.get("anchor")),
+        "anchorDisplay": (anchor_books(r.get("anchorDisplay"))
+                          if r.get("anchorDisplay") not in (None, "", "none")
+                          else []),
         "flag": r.get("flag"),
     }
 

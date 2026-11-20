@@ -119,7 +119,10 @@ def consensus_fair_prob(book_prices, method="multiplicative",
     books) are never in the anchor, because that would be
     circular.
 
-    Returns (fair_over_prob, n_books, anchor_books, flag).
+    Returns (fair_over_prob, n_books, anchor_books, flag,
+    display_books). display_books are the books sitting at the
+    median of the weight-expanded list — the ones that actually
+    set the fair price (see the display-anchor note below).
     fair_over_prob is None when n_books == 0. Flags:
     "sharp anchor" (n >= 3, sharp book present), "thin sharp
     anchor" (n == 2, sharp book present), "soft consensus —
@@ -174,8 +177,21 @@ def consensus_fair_prob(book_prices, method="multiplicative",
 
     n = len(anchor_books)
     if n == 0:
-        return None, 0, [], "no sharp anchor — consensus only"
+        return None, 0, [], "no sharp anchor — consensus only", []
     fair = median(fair_overs)
+    # Display anchor (Nov 20 2026, George): the books that actually
+    # set the fair price — the ones sitting at the median of the
+    # weight-expanded list. A soft filler book in a 1-sharp + 1-soft
+    # anchor never sits at the median (the sharp book is duplicated),
+    # so it is NOT shown: the row reads "Anchor: Kalshi · thin"
+    # instead of implying BetMGM helped set the price. When a soft
+    # book genuinely sits at the median (1 sharp + 2+ other books),
+    # it IS shown, because it did move the price.
+    ordered = sorted(fair_overs)
+    m = len(ordered)
+    med_vals = ({ordered[m // 2]} if m % 2 == 1
+                else {ordered[m // 2 - 1], ordered[m // 2]})
+    display_books = [name for name, fo in used if fo in med_vals]
     has_sharp = any(
         any(s in str(b).strip().lower() for s in sharp_books)
         for b in anchor_books)
@@ -187,7 +203,7 @@ def consensus_fair_prob(book_prices, method="multiplicative",
         flag = "sharp anchor" if n >= 3 else "thin sharp anchor"
     else:
         flag = "soft consensus — do not alert"
-    return fair, n, anchor_books, flag
+    return fair, n, anchor_books, flag, display_books
 
 
 # ------------------------------------------------------------------
@@ -217,9 +233,13 @@ def compare_prop(game: str, player: str, market: str, side: str,
     DraftKings'; the dashboard highlights the better of the two.
     """
     if book_prices:
-        fair_over, n_books, anchor_books, flag = consensus_fair_prob(
-            book_prices, method=method)
+        (fair_over, n_books, anchor_books, flag,
+         display_books) = consensus_fair_prob(book_prices, method=method)
         anchor = f"consensus ({n_books} books: {', '.join(anchor_books)})"
+        anchor_display = (f"consensus ({len(display_books)} book"
+                          f"{'s' if len(display_books) != 1 else ''}: "
+                          f"{', '.join(display_books)})"
+                          if display_books else "none")
     elif fair_prob_override is not None:
         # fair_prob_override is the fair prob for the SIDE given.
         fair_over = (float(fair_prob_override) if side.lower() == "over"
@@ -227,12 +247,14 @@ def compare_prop(game: str, player: str, market: str, side: str,
         n_books, anchor_books = 0, []
         flag = anchor_label
         anchor = anchor_label
+        anchor_display = anchor_label
     else:
         return {
             "game": game, "player": player, "market": market,
             "side": side, "line": line,
             "draftkings_american": draftkings_american,
             "anchor": "none", "anchor_books": "",
+            "anchor_display": "none",
             "fair_prob": None, "fair_decimal": None,
             "fair_american": None, "ev_pct": None,
             "kelly_full_stake": None, "kelly_quarter_stake": None,
@@ -252,6 +274,7 @@ def compare_prop(game: str, player: str, market: str, side: str,
             "side": side, "line": line,
             "draftkings_american": draftkings_american,
             "anchor": anchor, "anchor_books": ", ".join(anchor_books),
+            "anchor_display": anchor_display,
             "fair_prob": None, "fair_decimal": None,
             "fair_american": None, "ev_pct": None,
             "kelly_full_stake": None, "kelly_quarter_stake": None,
@@ -307,6 +330,7 @@ def compare_prop(game: str, player: str, market: str, side: str,
         "draftkings_implied_prob": round(1.0 / dk_dec, 4),
         "anchor": anchor,
         "anchor_books": ", ".join(anchor_books),
+        "anchor_display": anchor_display,
         "fair_prob": round(fair_side, 4),
         "fair_decimal": round(fair_price_from_prob(fair_side), 3),
         "fair_american": round(decimal_to_american(

@@ -148,6 +148,7 @@ def _prop_dash_row(r, game_date):
         "bestEvPct": best_ev,
         "fairProb": r.get("fair_prob"),
         "anchor": r.get("anchor"),
+        "anchorDisplay": r.get("anchor_display"),
         "flag": r.get("flag"),
     }
 

@@ -105,7 +105,7 @@ class TestProps(unittest.TestCase):
         # BetMGM -115/-105 ≈ 0.511.
         books = {"DraftKings": (-110, -110), "FanDuel": (-110, -110),
                  "BetMGM": (-115, -105)}
-        fair, n, anchor_books, flag = consensus_fair_prob(books)
+        fair, n, anchor_books, flag, display = consensus_fair_prob(books)
         self.assertEqual(n, 1)
         self.assertEqual(anchor_books, ["BetMGM"])
         self.assertNotIn("DraftKings", anchor_books)
@@ -121,11 +121,11 @@ class TestProps(unittest.TestCase):
         # the non-fallback core first — Hard Rock + Circa is
         # already 2 books, so BetMGM is not used as filler.)
         soft = {"BetMGM": (-115, -105), "Hard Rock Bet": (-110, -120)}
-        _f, n, _b, flag = consensus_fair_prob(soft)
+        _f, n, _b, flag, _display = consensus_fair_prob(soft)
         self.assertEqual(n, 2)
         self.assertEqual(flag, "soft consensus — do not alert")
         sharp = dict(soft, Circa=(-112, -108))
-        _f, n, anchor_books, flag = consensus_fair_prob(sharp)
+        _f, n, anchor_books, flag, _display = consensus_fair_prob(sharp)
         self.assertEqual(n, 2)
         self.assertEqual(anchor_books, ["Hard Rock Bet", "Circa"])
         self.assertEqual(flag, "thin sharp anchor")
@@ -138,13 +138,13 @@ class TestProps(unittest.TestCase):
         books = {"BetMGM": (-115, -105), "BetRivers": (-112, -108),
                  "Fanatics": (-110, -110), "Kalshi": (-113, -107),
                  "Novig": (-114, -106)}
-        _f, n, anchor_books, flag = consensus_fair_prob(books)
+        _f, n, anchor_books, flag, _display = consensus_fair_prob(books)
         self.assertEqual(n, 2)
         self.assertEqual(sorted(anchor_books), ["Kalshi", "Novig"])
         self.assertEqual(flag, "thin sharp anchor")
         # One sharp book only: soft books stay (thin coverage).
         thin = {"BetMGM": (-115, -105), "Kalshi": (-113, -107)}
-        _f, n, anchor_books, flag = consensus_fair_prob(thin)
+        _f, n, anchor_books, flag, _display = consensus_fair_prob(thin)
         self.assertEqual(n, 2)
         self.assertIn("BetMGM", anchor_books)
         self.assertEqual(flag, "thin sharp anchor")
@@ -157,7 +157,7 @@ class TestProps(unittest.TestCase):
         books = {"Hard Rock Bet": (-110, -120),
                  "ProphetX": (-112, -108),
                  "BetMGM": (-115, -105)}
-        _f, n, anchor_books, flag = consensus_fair_prob(books)
+        _f, n, anchor_books, flag, _display = consensus_fair_prob(books)
         self.assertEqual(n, 2)
         self.assertNotIn("BetMGM", anchor_books)
         self.assertEqual(flag, "soft consensus — do not alert")
@@ -166,13 +166,13 @@ class TestProps(unittest.TestCase):
         # appended after the core book.
         books = {"Kalshi": (-113, -107), "BetMGM": (-115, -105),
                  "BetRivers": (-112, -108)}
-        _f, n, anchor_books, flag = consensus_fair_prob(books)
+        _f, n, anchor_books, flag, _display = consensus_fair_prob(books)
         self.assertEqual(n, 2)
         self.assertEqual(anchor_books, ["Kalshi", "BetMGM"])
         self.assertEqual(flag, "thin sharp anchor")
         # Core empty: both fallbacks used (soft consensus).
         books = {"BetMGM": (-115, -105), "Fanatics": (-110, -110)}
-        _f, n, anchor_books, flag = consensus_fair_prob(books)
+        _f, n, anchor_books, flag, _display = consensus_fair_prob(books)
         self.assertEqual(n, 2)
         self.assertEqual(anchor_books, ["BetMGM", "Fanatics"])
 
@@ -212,15 +212,59 @@ class TestProps(unittest.TestCase):
         # anchor" and flagged +EV. A single source is never an
         # anchor, sharp or not.
         for book in ("Novig", "Kalshi", "Circa"):
-            _f, n, _b, flag = consensus_fair_prob({book: (-110, -110)})
+            _f, n, _b, flag, _display = consensus_fair_prob({book: (-110, -110)})
             self.assertEqual(n, 1)
             self.assertEqual(flag, "single-book anchor — do not alert")
 
     def test_consensus_no_books(self):
-        fair, n, _, flag = consensus_fair_prob({"DraftKings": (-110, -110)})
+        fair, n, _, flag, _display = consensus_fair_prob({"DraftKings": (-110, -110)})
         self.assertIsNone(fair)
         self.assertEqual(n, 0)
         self.assertIn("no sharp anchor", flag)
+
+    def test_display_anchor_hides_soft_filler(self):
+        # Display anchor (Nov 20 2026, George): only the books
+        # that actually set the fair price are shown. 1 sharp +
+        # 1 soft filler: the sharp book is duplicated in the
+        # median, so the median IS the sharp book's price and the
+        # filler is not shown — but it stays in anchor_books (the
+        # watcher still gates on the full anchor).
+        _f, n, anchor_books, flag, display = consensus_fair_prob(
+            {"Kalshi": (-113, -107), "BetMGM": (-115, -105)})
+        self.assertEqual(n, 2)
+        self.assertEqual(anchor_books, ["Kalshi", "BetMGM"])
+        self.assertEqual(flag, "thin sharp anchor")
+        self.assertEqual(display, ["Kalshi"])
+        r = compare_prop(
+            "G", "X", "Threes", "Under", 2.5, -165,
+            book_prices={"Kalshi": (-113, -107),
+                         "BetMGM": (-115, -105)})
+        self.assertIn("BetMGM", r["anchor"])
+        self.assertEqual(r["anchor_display"],
+                         "consensus (1 book: Kalshi)")
+
+    def test_display_anchor_shows_soft_book_at_median(self):
+        # 1 sharp + 2 weight-1 books: when a soft book genuinely
+        # sits at the median it DID move the price, so it IS shown.
+        # Kalshi 0.5, Bovada ~0.457, Hard Rock ~0.438: expanded
+        # [0.438, 0.457, 0.5, 0.5] -> median (0.457+0.5)/2.
+        _f, n, _b, flag, display = consensus_fair_prob(
+            {"Kalshi": (-110, -110), "Bovada": (110, -130),
+             "Hard Rock Bet": (120, -140)})
+        self.assertEqual(n, 3)
+        self.assertEqual(flag, "sharp anchor")
+        self.assertEqual(display, ["Bovada", "Kalshi"])
+
+    def test_display_anchor_two_and_three_sharps(self):
+        # Two sharp books at the same price: both set it.
+        _f, _n, _b, _flag, display = consensus_fair_prob(
+            {"Kalshi": (-110, -110), "Novig": (-110, -110)})
+        self.assertEqual(sorted(display), ["Kalshi", "Novig"])
+        # Three sharp books, distinct prices: only the middle one.
+        _f, _n, _b, _flag, display = consensus_fair_prob(
+            {"Kalshi": (-110, -110), "Novig": (-130, 110),
+             "Circa": (110, -130)})
+        self.assertEqual(display, ["Kalshi"])
 
     def test_prop_line_difference_is_different_bet(self):
         # compare_prop with a fair-prob override is the sample path;
