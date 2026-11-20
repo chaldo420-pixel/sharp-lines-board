@@ -380,10 +380,17 @@ function isThinAnchor(r) {
 
 function anchorLabel(r) {
   if (r.kind === "game") return "Pinnacle (no-vig)";
-  // Show only the books that actually set the fair price
-  // (anchorDisplay); fall back to the full anchor for snapshots
-  // built before it existed.
-  var a = (r.anchorDisplay && r.anchorDisplay.length) ? r.anchorDisplay : (r.anchor || []);
+  // List every sharp book in the anchor (Nov 20 2026, George):
+  // consensus depth is the signal — a 4-sharp anchor reads
+  // stronger than a 1-sharp thin one. Soft fillers are never
+  // listed. When the anchor has no sharp book at all (soft-only
+  // or single-book), fall back to the price-setting books
+  // (anchorDisplay) so the row still names its anchor.
+  var sharps = (r.anchor || []).filter(function (b) {
+    return SHARP_BOOKS.indexOf(String(b).toLowerCase()) !== -1;
+  });
+  var a = sharps.length ? sharps
+    : ((r.anchorDisplay && r.anchorDisplay.length) ? r.anchorDisplay : (r.anchor || []));
   if (!a.length || a[0] === "none") return "None \u2014 no consensus anchor";
   var label = a.join(", ");
   if (isThinAnchor(r)) label += " \u00b7 thin";
