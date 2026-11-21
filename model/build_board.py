@@ -36,6 +36,13 @@ Rules (same model as the Sharp Lines Dashboard):
     refresh. The trigger may still be 15 minutes until the
     cron-job.org job is changed; until then every tick is due
     and the tier logic is harmless.
+  * Flip marker: board.json carries flaggedToday, the lineKeys
+    of every row that qualified (+EV >=2% on a sharp anchor)
+    in any snapshot today (ET). A qualifying row whose
+    OPPOSITE side already flagged earlier today (an earlier
+    snapshot, never the same one) gets flip=true and flipSide
+    naming that side, so the page can show a FLIPPED marker.
+    Both sides can still flag — this only annotates.
   * Budget: PropLine free tier, 1,000 requests/day. The run
     stops for the day once today's counted calls would pass
     850 (counter in requests_log.jsonl, committed each run).
@@ -234,6 +241,127 @@ def _sort_key(row):
     return (ev is None, -(ev if ev is not None else 0.0))
 
 
+# Sharp books for the flip / alert qualification rule (same
+# 9-book set as the site's SHARP_BOOKS and the watcher).
+SHARP_BOOKS = frozenset({
+    "pinnacle", "novig", "prophetx", "betonline", "bookmaker",
+    "circa", "kalshi", "polymarket", "sporttrade",
+})
+
+
+def _line_str(line):
+    """Line as it appears in a watcher lineKey: whole numbers
+    without a decimal (3, not 3.0), .5 lines as-is, null -> ''."""
+    if line is None or line == "":
+        return ""
+    f = float(line)
+    if f == int(f):
+        return str(int(f))
+    return str(f)
+
+
+def line_key(row):
+    """Watcher lineKey for a slim row:
+    {gameDate}|{game}|{player}|{market}|{side}|{line}."""
+    return "|".join([
+        str(row.get("gameDate") or ""),
+        str(row.get("game") or ""),
+        str(row.get("player") or ""),
+        str(row.get("market") or ""),
+        str(row.get("side") or ""),
+        _line_str(row.get("line")),
+    ])
+
+
+def _is_sharp_anchored(row):
+    """Same sharp-anchor rule as the alerts and the site's +EV
+    plays filter: game rows are Pinnacle-anchored; prop rows
+    need 2+ anchor books with at least 1 sharp book."""
+    anchor = row.get("anchor") or []
+    if row.get("kind") == "game":
+        return anchor == ["Pinnacle (no-vig)"]
+    if len(anchor) < 2:
+        return False
+    return any(str(b).lower() in SHARP_BOOKS for b in anchor)
+
+
+def _qualifies(row, date_str):
+    """A row counts as flagged today when it clears the alert
+    threshold on a sharp anchor, dated today (ET)."""
+    if row.get("gameDate") != date_str:
+        return False
+    ev = row.get("bestEv")
+    if ev is None:
+        return False
+    try:
+        ev = float(ev)
+    except (TypeError, ValueError):
+        return False
+    return ev >= ALERT_THRESHOLD_EV and _is_sharp_anchored(row)
+
+
+def _load_flagged_today(now_et):
+    """lineKeys flagged in earlier snapshots today (ET).
+
+    Read from the checked-out board.json's flaggedToday, but
+    only when that snapshot is dated today; a missing file,
+    corrupt JSON, a previous-day snapshot, or a non-list
+    flaggedToday all mean []. A 0-row snapshot keeps its
+    flaggedToday — an empty board is no data, not a reset.
+    """
+    try:
+        with open(_board_path(), encoding="utf-8") as f:
+            board = json.load(f)
+    except (OSError, ValueError):
+        return []
+    try:
+        snap_at = datetime.fromisoformat(board["snapshotAt"])
+    except (KeyError, ValueError, TypeError):
+        return []
+    if snap_at.tzinfo is not None:
+        snap_at = snap_at.astimezone(ET)
+    else:
+        snap_at = snap_at.replace(tzinfo=ET)
+    if snap_at.strftime("%Y-%m-%d") != now_et.strftime("%Y-%m-%d"):
+        return []
+    flagged = board.get("flaggedToday") or []
+    if not isinstance(flagged, list):
+        return []
+    return [k for k in flagged if isinstance(k, str)]
+
+
+def _apply_flips(rows, old_flagged, date_str):
+    """Mark flip rows and return the new flaggedToday list.
+
+    A qualifying row is a flip when the OPPOSITE side of the
+    same line already flagged earlier today — i.e. a key in
+    the OLD flaggedToday list (never this snapshot's own keys)
+    with the same date|game|player|market|line and a different
+    side. flipSide names the side that flagged earlier. Both
+    sides can still flag; this only annotates. Returns the new
+    flaggedToday: old union this snapshot's qualifying keys.
+    """
+    by_line = {}
+    for key in old_flagged:
+        parts = key.split("|")
+        if len(parts) != 6:
+            continue
+        by_line.setdefault(tuple(parts[:4] + [parts[5]]), set()).add(parts[4])
+    new_keys = set()
+    for row in rows:
+        if not _qualifies(row, date_str):
+            continue
+        key = line_key(row)
+        new_keys.add(key)
+        parts = key.split("|")
+        others = (by_line.get(tuple(parts[:4] + [parts[5]]), set())
+                  - {parts[4]})
+        if others:
+            row["flip"] = True
+            row["flipSide"] = sorted(others)[0]
+    return sorted(set(old_flagged) | new_keys)
+
+
 def build(now_et):
     """One refresh. Returns (status, calls)."""
     date_str = now_et.strftime("%Y-%m-%d")
@@ -293,6 +421,10 @@ def build(now_et):
             r, game_dates.get(r["game"], date_str)))
     dash_rows.sort(key=_sort_key)
 
+    slim_rows = [slim_row(r) for r in dash_rows]
+    old_flagged = _load_flagged_today(now_et)
+    new_flagged = _apply_flips(slim_rows, old_flagged, date_str)
+
     out = {
         "generatedAt": datetime.now(timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"),
@@ -300,7 +432,8 @@ def build(now_et):
         "snapshotAt": now_et.isoformat(),
         "rowCount": len(dash_rows),
         "thresholdPct": int(ALERT_THRESHOLD_EV),
-        "rows": [slim_row(r) for r in dash_rows],
+        "flaggedToday": new_flagged,
+        "rows": slim_rows,
     }
     with open(_board_path(), "w", encoding="utf-8") as f:
         json.dump(out, f, separators=(",", ":"))
@@ -308,7 +441,9 @@ def build(now_et):
     print(f"LIVE calls={counter[0]} "
           f"today_total={today_total(date_str, _log_path())} "
           f"events={len(events)} game_rows={len(game_rows)} "
-          f"prop_rows={len(prop_rows)} board_rows={len(dash_rows)}")
+          f"prop_rows={len(prop_rows)} board_rows={len(dash_rows)} "
+          f"flips={sum(1 for r in slim_rows if r.get('flip'))} "
+          f"flagged_today={len(new_flagged)}")
     return "LIVE", counter[0]
 
 

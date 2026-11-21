@@ -167,6 +167,12 @@
     color: var(--warn); border: 1px solid var(--warn); white-space: nowrap;
   }
 
+  /* --- flip marker --- */
+  .flip-pill {
+    display: inline-block; font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 999px;
+    color: var(--warn); border: 1px solid var(--warn); margin-top: 8px;
+  }
+
   /* --- alerts card --- */
   .alerts-card { margin-top: 32px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); padding: 16px; }
   .alerts-card h2 { font-size: 18px; font-weight: 800; margin: 0; }
@@ -397,6 +403,15 @@ function anchorLabel(r) {
   return label;
 }
 
+function flipHtml(r) {
+  // Flip marker (Nov 21 2026, George): the opposite side of
+  // this line already flagged earlier today. Older snapshots
+  // have no flip field — undefined means no marker.
+  if (!r.flip || !r.flipSide) return "";
+  return '<div class="flip-pill">\u2194 FLIPPED \u2014 ' + r.flipSide +
+    " flagged earlier today \u2014 check if you placed the other side.</div>";
+}
+
 function evBadgeHtml(ev, big) {
   if (ev === null || ev === undefined || isNaN(Number(ev))) {
     return '<div class="ev-badge warn' + (big ? " big" : "") + '">NO EV</div>';
@@ -459,6 +474,7 @@ function playCardHtml(r, featured) {
   return '<article class="play' + (featured ? " featured" : "") + '">' +
     '<div class="play-top"><div class="left"><h3>' + title + "</h3>" +
     '<div class="play-sub">' + rowSubtitle(r) + "</div></div>" + badge + "</div>" +
+    flipHtml(r) +
     grid + hit + foot + "</article>";
 }
 
@@ -480,7 +496,7 @@ function boardRowHtml(r) {
   }
   return '<article class="row"><div class="left"><div class="row-title">' + rowTitle(r) + "</div>" +
     '<div class="row-sub">' + rowSubtitle(r) + "</div>" +
-    '<div class="row-line">' + line + "</div>" + anchor + hit + "</div>" +
+    '<div class="row-line">' + line + "</div>" + anchor + flipHtml(r) + hit + "</div>" +
     '<div class="ev-wrap">' + evBadgeHtml(r.bestEv, false) + "</div></article>";
 }
 

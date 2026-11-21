@@ -5,6 +5,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from build_board import (_apply_flips, _is_sharp_anchored,
+                         _load_flagged_today, _qualifies, line_key)
 from model import (american_to_decimal, clv_pct, compare_row,
                    decimal_to_american, ev_pct, kelly_fraction,
                    kelly_stake, no_vig)
@@ -628,6 +630,182 @@ class TestPoller(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["line"], 11.5)
         self.assertEqual(rows[0]["dk_over"], -110.0)
+
+
+class TestFlipMarker(unittest.TestCase):
+    def _row(self, **kw):
+        r = {"game": "Boston Celtics @ Sacramento Kings",
+             "gameDate": "2026-11-21", "kind": "prop",
+             "player": "Zach LaVine", "market": "Rebounds",
+             "side": "Under", "line": 2.5, "bestEv": 4.69,
+             "anchor": ["Novig", "BetRivers"]}
+        r.update(kw)
+        return r
+
+    def test_line_key_format(self):
+        # Watcher format: whole numbers without a decimal,
+        # .5 lines as-is, null line as ''.
+        self.assertEqual(
+            line_key(self._row(line=3)),
+            "2026-11-21|Boston Celtics @ Sacramento Kings|"
+            "Zach LaVine|Rebounds|Under|3")
+        self.assertEqual(
+            line_key(self._row(line=2.5)),
+            "2026-11-21|Boston Celtics @ Sacramento Kings|"
+            "Zach LaVine|Rebounds|Under|2.5")
+        self.assertEqual(
+            line_key(self._row(kind="game", player=None,
+                               market="moneyline",
+                               side="Boston Celtics ML", line=None,
+                               anchor=["Pinnacle (no-vig)"])),
+            "2026-11-21|Boston Celtics @ Sacramento Kings||"
+            "moneyline|Boston Celtics ML|")
+
+    def test_same_snapshot_opposite_side_is_not_a_flip(self):
+        # Old-list-only rule: both sides qualifying in the SAME
+        # snapshot is not a flip — the flip needs an earlier
+        # snapshot. Both sides still qualify and both enter
+        # flaggedToday (no one-side suppression).
+        rows = [self._row(side="Over", bestEv=3.0),
+                self._row(side="Under", bestEv=4.0)]
+        new = _apply_flips(rows, [], "2026-11-21")
+        self.assertFalse(any(r.get("flip") for r in rows))
+        self.assertEqual(len(new), 2)
+
+    def test_opposite_side_in_old_list_marks_flip(self):
+        old = ["2026-11-21|Boston Celtics @ Sacramento Kings|"
+               "Zach LaVine|Rebounds|Under|2.5"]
+        rows = [self._row(side="Over", bestEv=3.0)]
+        new = _apply_flips(rows, old, "2026-11-21")
+        self.assertTrue(rows[0].get("flip"))
+        self.assertEqual(rows[0].get("flipSide"), "Under")
+        self.assertIn("2026-11-21|Boston Celtics @ Sacramento Kings|"
+                      "Zach LaVine|Rebounds|Over|2.5", new)
+        self.assertIn(old[0], new)  # old keys carried forward
+
+    def test_same_side_in_old_list_is_not_a_flip(self):
+        old = ["2026-11-21|Boston Celtics @ Sacramento Kings|"
+               "Zach LaVine|Rebounds|Over|2.5"]
+        rows = [self._row(side="Over", bestEv=3.0)]
+        _apply_flips(rows, old, "2026-11-21")
+        self.assertFalse(rows[0].get("flip"))
+
+    def test_game_row_flip_uses_other_team(self):
+        old = ["2026-11-21|Boston Celtics @ Sacramento Kings||"
+               "moneyline|Sacramento Kings ML|"]
+        rows = [self._row(kind="game", player=None,
+                          market="moneyline",
+                          side="Boston Celtics ML", line=None,
+                          bestEv=3.4, anchor=["Pinnacle (no-vig)"])]
+        _apply_flips(rows, old, "2026-11-21")
+        self.assertTrue(rows[0].get("flip"))
+        self.assertEqual(rows[0].get("flipSide"),
+                         "Sacramento Kings ML")
+
+    def test_non_qualifying_row_never_flips_or_records(self):
+        # Single-book anchor: high EV but not sharp-anchored.
+        # Below-threshold EV on a sharp anchor: also out.
+        old = ["2026-11-21|Boston Celtics @ Sacramento Kings|"
+               "Zach LaVine|Rebounds|Under|2.5"]
+        rows = [self._row(side="Over", bestEv=9.0,
+                          anchor=["BetMGM"]),
+                self._row(side="Over", bestEv=1.5, line=3.5)]
+        new = _apply_flips(rows, old, "2026-11-21")
+        self.assertFalse(any(r.get("flip") for r in rows))
+        self.assertEqual(new, old)  # nothing new recorded
+
+    def test_qualifies_needs_today_and_sharp_anchor(self):
+        self.assertTrue(_qualifies(self._row(), "2026-11-21"))
+        self.assertFalse(_qualifies(self._row(), "2026-11-20"))
+        self.assertFalse(_qualifies(self._row(bestEv=1.9),
+                                   "2026-11-21"))
+        self.assertFalse(_qualifies(self._row(anchor=["BetMGM"]),
+                                   "2026-11-21"))
+        self.assertFalse(_qualifies(self._row(anchor=["Novig"]),
+                                   "2026-11-21"))  # single book
+        self.assertTrue(_qualifies(
+            self._row(anchor=["Pinnacle", "Novig"]), "2026-11-21"))
+        self.assertTrue(_is_sharp_anchored(
+            self._row(kind="game", anchor=["Pinnacle (no-vig)"])))
+
+    def test_load_flagged_today_date_reset(self):
+        import json as _json
+        import tempfile
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        import build_board
+        et = ZoneInfo("America/New_York")
+        now = datetime(2026, 11, 21, 10, 0, tzinfo=et)
+        old = ["2026-11-20|G|P|Points|Over|11.5"]
+        cases = [
+            # Yesterday's snapshot: reset to [].
+            ({"snapshotAt": "2026-11-20T22:00:00-05:00",
+              "flaggedToday": old}, []),
+            # Today's snapshot: keep the list.
+            ({"snapshotAt": "2026-11-21T09:45:00-05:00",
+              "flaggedToday": old}, old),
+            # Missing flaggedToday field: [].
+            ({"snapshotAt": "2026-11-21T09:45:00-05:00"}, []),
+            # flaggedToday not a list: [].
+            ({"snapshotAt": "2026-11-21T09:45:00-05:00",
+              "flaggedToday": "nope"}, []),
+        ]
+        orig = build_board._board_path
+        try:
+            for board, expected in cases:
+                with tempfile.NamedTemporaryFile(
+                        "w", suffix=".json", delete=False) as f:
+                    _json.dump(board, f)
+                    path = f.name
+                build_board._board_path = lambda p=path: p
+                self.assertEqual(_load_flagged_today(now), expected)
+                os.unlink(path)
+            # Missing file -> [].
+            build_board._board_path = lambda: \
+                "/tmp/definitely-not-a-board-xyz.json"
+            self.assertEqual(_load_flagged_today(now), [])
+            # Corrupt JSON -> [].
+            with tempfile.NamedTemporaryFile(
+                    "w", suffix=".json", delete=False) as f:
+                f.write("{not json")
+                path = f.name
+            build_board._board_path = lambda p=path: p
+            self.assertEqual(_load_flagged_today(now), [])
+            os.unlink(path)
+        finally:
+            build_board._board_path = orig
+
+    def test_skipped_tick_leaves_board_untouched(self):
+        # Adaptive skip: a fresh snapshot means skip_if_not_due
+        # is True and build() never runs, so board.json bytes
+        # (including flaggedToday) are untouched.
+        import json as _json
+        import tempfile
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        import build_board
+        et = ZoneInfo("America/New_York")
+        now = datetime(2026, 11, 21, 10, 0, tzinfo=et)
+        board = {"snapshotAt": (now - timedelta(minutes=4)).isoformat(),
+                 "rows": [{"game": "A @ B",
+                           "gameDate": "2026-11-21"}],
+                 "flaggedToday": ["2026-11-21|A @ B|P|Points|Over|11.5"]}
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".json", delete=False) as f:
+            _json.dump(board, f)
+            path = f.name
+        orig = build_board._board_path
+        try:
+            build_board._board_path = lambda: path
+            with open(path, "rb") as f:
+                before = f.read()
+            self.assertTrue(build_board.skip_if_not_due(now))
+            with open(path, "rb") as f:
+                after = f.read()
+            self.assertEqual(before, after)
+        finally:
+            build_board._board_path = orig
+            os.unlink(path)
 
 
 if __name__ == "__main__":
