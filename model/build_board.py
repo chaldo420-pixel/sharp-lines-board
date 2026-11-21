@@ -23,6 +23,19 @@ Rules (same model as the Sharp Lines Dashboard):
   * Alert threshold +2% EV. No bet links anywhere.
   * Window: 08:00-23:00 ET only. Outside the window the run
     exits quietly (status SKIPPED), no API calls.
+  * Adaptive cadence: the trigger fires every 5 minutes
+    (cron-job.org); the model picks its own refresh interval
+    from the distinct games on today's board snapshot, read
+    from the already-checked-out board.json (zero PropLine
+    calls to decide): 12+ games -> 20 min, 9-11 -> 15 min,
+    5-8 -> 10 min, 4 or fewer -> 5 min. If the last snapshot
+    is newer than the tier interval the run exits SKIPPED with
+    no API calls and no board write. A missing snapshot, a
+    snapshot from a previous day, or a 0-row snapshot is
+    treated as unknown (never as "0 games") and runs a full
+    refresh. The trigger may still be 15 minutes until the
+    cron-job.org job is changed; until then every tick is due
+    and the tier logic is harmless.
   * Budget: PropLine free tier, 1,000 requests/day. The run
     stops for the day once today's counted calls would pass
     850 (counter in requests_log.jsonl, committed each run).
@@ -58,6 +71,68 @@ ET = ZoneInfo("America/New_York")
 
 def _board_path():
     return os.path.join(REPO_ROOT, "board.json")
+
+
+def _tier_interval(game_count):
+    """Refresh interval (minutes) for today's game count."""
+    if game_count >= 12:
+        return 20
+    if game_count >= 9:
+        return 15
+    if game_count >= 5:
+        return 10
+    return 5
+
+
+def _last_snapshot(now_et):
+    """(snapshotAt, distinct games today) from checked-out board.json.
+
+    Returns (None, None) when there is no usable snapshot: file
+    missing/unparseable, snapshotAt missing/unparseable, 0 rows,
+    or no rows dated today. A 0-row snapshot is unknown, never
+    "0 games" (PropLine returning zero games must not push the
+    board onto the 5-minute tier).
+    """
+    try:
+        with open(_board_path(), encoding="utf-8") as f:
+            board = json.load(f)
+    except (OSError, ValueError):
+        return None, None
+    rows = board.get("rows") or []
+    if not rows:
+        return None, None
+    try:
+        snap_at = datetime.fromisoformat(board["snapshotAt"])
+    except (KeyError, ValueError, TypeError):
+        return None, None
+    if snap_at.tzinfo is None:
+        snap_at = snap_at.replace(tzinfo=ET)
+    today = now_et.strftime("%Y-%m-%d")
+    games = {r.get("game") for r in rows if r.get("gameDate") == today}
+    if not games:
+        return None, None
+    return snap_at, len(games)
+
+
+def skip_if_not_due(now_et):
+    """True when this tick should be skipped (zero PropLine calls).
+
+    The tier interval comes from the distinct games on today's
+    snapshot. First run of the day, or an unknown snapshot, is
+    always due.
+    """
+    snap_at, game_count = _last_snapshot(now_et)
+    if snap_at is None:
+        return False
+    interval = _tier_interval(game_count)
+    age_min = (now_et - snap_at).total_seconds() / 60.0
+    if age_min < interval:
+        print(f"SKIPPED: last snapshot "
+              f"{snap_at.strftime('%H:%M')} ET is {age_min:.1f} min old; "
+              f"{game_count} games today -> {interval}-min tier — "
+              f"no API calls, no refresh")
+        return True
+    return False
 
 
 def _log_path():
@@ -252,6 +327,8 @@ def main():
     if not in_window(now_et):
         print(f"SKIPPED: {now_et.strftime('%H:%M')} ET is outside the "
               f"08:00-23:00 ET window — no API calls, no refresh")
+        return 0
+    if skip_if_not_due(now_et):
         return 0
     status, _calls = build(now_et)
     return 0 if status in ("LIVE", "BUDGET_EXCEEDED") else 3
