@@ -5,8 +5,9 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from build_board import (_apply_flips, _is_sharp_anchored,
-                         _load_flagged_today, _qualifies, line_key)
+from build_board import (_apply_flips, _apply_one_side,
+                         _is_sharp_anchored, _load_flagged_today,
+                         _qualifies, line_key)
 from model import (american_to_decimal, clv_pct, compare_row,
                    decimal_to_american, ev_pct, kelly_fraction,
                    kelly_stake, no_vig)
@@ -806,6 +807,125 @@ class TestFlipMarker(unittest.TestCase):
         finally:
             build_board._board_path = orig
             os.unlink(path)
+
+
+class TestOneSide(unittest.TestCase):
+    def _row(self, **kw):
+        r = {"game": "Boston Celtics @ Sacramento Kings",
+             "gameDate": "2026-11-21", "kind": "prop",
+             "player": "Zach LaVine", "market": "Rebounds",
+             "side": "Under", "line": 2.5, "bestEv": 4.69,
+             "anchor": ["Novig", "BetRivers"]}
+        r.update(kw)
+        return r
+
+    def _pipeline(self, rows, old):
+        # The build() order: suppress within this snapshot,
+        # then flips for the kept rows vs the OLD list.
+        _apply_one_side(rows, old, "2026-11-21")
+        return _apply_flips(rows, old, "2026-11-21")
+
+    def test_both_sides_keep_higher_suppress_lower(self):
+        rows = [self._row(side="Over", bestEv=5.0),
+                self._row(side="Under", bestEv=3.0)]
+        new = self._pipeline(rows, [])
+        over, under = rows
+        self.assertFalse(over.get("suppressed"))
+        self.assertTrue(under.get("suppressed"))
+        # Suppressed side is not recorded; kept side is.
+        self.assertEqual(new, [line_key(over)])
+        # Suppressed row is still emitted with its EV intact.
+        self.assertEqual(under["bestEv"], 3.0)
+        self.assertEqual(len(rows), 2)
+
+    def test_tie_prefers_side_already_flagged(self):
+        # Both sides at +4.0%; the Under flagged this morning,
+        # so the Under stays kept and the Over is suppressed.
+        old = [line_key(self._row(side="Under", bestEv=4.0))]
+        rows = [self._row(side="Over", bestEv=4.0),
+                self._row(side="Under", bestEv=4.0)]
+        new = self._pipeline(rows, old)
+        over, under = rows
+        self.assertTrue(over.get("suppressed"))
+        self.assertFalse(under.get("suppressed"))
+        self.assertEqual(new, [old[0]])
+
+    def test_tie_neither_flagged_keeps_first_in_order(self):
+        rows = [self._row(side="Over", bestEv=4.0),
+                self._row(side="Under", bestEv=4.0)]
+        new = self._pipeline(rows, [])
+        over, under = rows
+        self.assertFalse(over.get("suppressed"))
+        self.assertTrue(under.get("suppressed"))
+        self.assertEqual(new, [line_key(over)])
+        # Reversed input order: the Under (now first) is kept.
+        rows = [self._row(side="Under", bestEv=4.0),
+                self._row(side="Over", bestEv=4.0)]
+        new = self._pipeline(rows, [])
+        under, over = rows
+        self.assertFalse(under.get("suppressed"))
+        self.assertTrue(over.get("suppressed"))
+        self.assertEqual(new, [line_key(under)])
+
+    def test_only_one_side_qualifies_no_suppression(self):
+        rows = [self._row(side="Over", bestEv=5.0),
+                self._row(side="Under", bestEv=1.0)]
+        new = self._pipeline(rows, [])
+        self.assertFalse(any(r.get("suppressed") for r in rows))
+        self.assertEqual(new, [line_key(rows[0])])
+
+    def test_neither_qualifies_nothing_happens(self):
+        rows = [self._row(side="Over", bestEv=1.0),
+                self._row(side="Under", bestEv=1.5)]
+        new = self._pipeline(rows, [])
+        self.assertFalse(any(r.get("suppressed") for r in rows))
+        self.assertFalse(any(r.get("flip") for r in rows))
+        self.assertEqual(new, [])
+
+    def test_game_rows_unaffected(self):
+        # Two moneyline sides of the same game both qualify —
+        # game rows are out of scope and never suppressed.
+        rows = [self._row(kind="game", player=None,
+                          market="moneyline",
+                          side="Boston Celtics ML", line=None,
+                          bestEv=3.4, anchor=["Pinnacle (no-vig)"]),
+                self._row(kind="game", player=None,
+                          market="moneyline",
+                          side="Sacramento Kings ML", line=None,
+                          bestEv=2.8, anchor=["Pinnacle (no-vig)"])]
+        new = self._pipeline(rows, [])
+        self.assertFalse(any(r.get("suppressed") for r in rows))
+        self.assertEqual(len(new), 2)
+
+    def test_flip_still_fires_for_kept_side(self):
+        # Under flagged in the morning; in the evening both
+        # sides qualify and Over is higher, so Over is kept and
+        # gets flip=true (Under is in old flaggedToday).
+        old = [line_key(self._row(side="Under", bestEv=3.0))]
+        rows = [self._row(side="Over", bestEv=5.0),
+                self._row(side="Under", bestEv=3.0)]
+        new = self._pipeline(rows, old)
+        over, under = rows
+        self.assertTrue(under.get("suppressed"))
+        self.assertFalse(under.get("flip"))
+        self.assertTrue(over.get("flip"))
+        self.assertEqual(over.get("flipSide"), "Under")
+        self.assertEqual(sorted(new), sorted([old[0], line_key(over)]))
+
+    def test_old_side_still_higher_no_flip_no_flag(self):
+        # Under flagged in the morning and is still higher in
+        # the evening: Under stays kept, Over is suppressed,
+        # and nothing flips.
+        old = [line_key(self._row(side="Under", bestEv=5.0))]
+        rows = [self._row(side="Over", bestEv=3.0),
+                self._row(side="Under", bestEv=5.0)]
+        new = self._pipeline(rows, old)
+        over, under = rows
+        self.assertTrue(over.get("suppressed"))
+        self.assertFalse(under.get("suppressed"))
+        self.assertFalse(under.get("flip"))
+        self.assertFalse(over.get("flip"))
+        self.assertEqual(new, [old[0]])
 
 
 if __name__ == "__main__":

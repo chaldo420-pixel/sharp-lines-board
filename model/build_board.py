@@ -43,6 +43,14 @@ Rules (same model as the Sharp Lines Dashboard):
     snapshot, never the same one) gets flip=true and flipSide
     naming that side, so the page can show a FLIPPED marker.
     Both sides can still flag — this only annotates.
+  * One-side rule (props only, Nov 21 2026, George): in each
+    snapshot, for each prop line (game, player, market, line),
+    only the higher-bestEv side is a +EV play; the other side
+    gets suppressed=true. The suppressed row still appears on
+    the board with its EV intact — it is just not a +EV play,
+    does not alert, and is not recorded in flaggedToday. Game
+    rows are untouched. Tie on bestEv: prefer the side already
+    in flaggedToday; otherwise the first row in snapshot order.
   * Budget: PropLine free tier, 1,000 requests/day. The run
     stops for the day once today's counted calls would pass
     850 (counter in requests_log.jsonl, committed each run).
@@ -338,8 +346,10 @@ def _apply_flips(rows, old_flagged, date_str):
     the OLD flaggedToday list (never this snapshot's own keys)
     with the same date|game|player|market|line and a different
     side. flipSide names the side that flagged earlier. Both
-    sides can still flag; this only annotates. Returns the new
-    flaggedToday: old union this snapshot's qualifying keys.
+    sides can still flag; this only annotates. Suppressed rows
+    (one-side rule) are skipped — they neither flip nor enter
+    flaggedToday. Returns the new flaggedToday: old union this
+    snapshot's qualifying (and kept) keys.
     """
     by_line = {}
     for key in old_flagged:
@@ -351,6 +361,8 @@ def _apply_flips(rows, old_flagged, date_str):
     for row in rows:
         if not _qualifies(row, date_str):
             continue
+        if row.get("suppressed"):
+            continue
         key = line_key(row)
         new_keys.add(key)
         parts = key.split("|")
@@ -360,6 +372,46 @@ def _apply_flips(rows, old_flagged, date_str):
             row["flip"] = True
             row["flipSide"] = sorted(others)[0]
     return sorted(set(old_flagged) | new_keys)
+
+
+def _apply_one_side(rows, old_flagged, date_str):
+    """Per-snapshot one-side rule (props only, Nov 21 2026).
+
+    Group qualifying prop rows by (game, player, market, line).
+    When both Over and Under qualify in the same snapshot, keep
+    only the higher-bestEv side and mark the other
+    suppressed=True. The suppressed row still appears on the
+    board with its EV intact — it is just not a +EV play, does
+    not alert, and is not recorded in flaggedToday. Game rows
+    are untouched. Tie on bestEv: prefer the side already in
+    old flaggedToday (continuity); if neither is, keep the
+    first row in snapshot order.
+    """
+    old_set = set(old_flagged)
+    groups = {}
+    order = []
+    for i, row in enumerate(rows):
+        if row.get("kind") != "prop":
+            continue
+        if not _qualifies(row, date_str):
+            continue
+        group_key = (row.get("gameDate"), row.get("game"),
+                     row.get("player"), row.get("market"),
+                     _line_str(row.get("line")))
+        if group_key not in groups:
+            groups[group_key] = []
+            order.append(group_key)
+        groups[group_key].append((i, row))
+    for group_key in order:
+        members = groups[group_key]
+        if len(members) == 1:
+            continue
+        members.sort(key=lambda item: (
+            -float(item[1].get("bestEv")),
+            0 if line_key(item[1]) in old_set else 1,
+            item[0]))
+        for _i, row in members[1:]:
+            row["suppressed"] = True
 
 
 def build(now_et):
@@ -423,6 +475,12 @@ def build(now_et):
 
     slim_rows = [slim_row(r) for r in dash_rows]
     old_flagged = _load_flagged_today(now_et)
+    # Order per run: (1) old flaggedToday loaded above;
+    # (2) qualification is computed inside the helpers;
+    # (3) one-side suppression within this snapshot;
+    # (4) flips for the KEPT qualifying rows vs OLD flaggedToday;
+    # (5) new flaggedToday = old union kept qualifying keys.
+    _apply_one_side(slim_rows, old_flagged, date_str)
     new_flagged = _apply_flips(slim_rows, old_flagged, date_str)
 
     out = {
@@ -443,6 +501,7 @@ def build(now_et):
           f"events={len(events)} game_rows={len(game_rows)} "
           f"prop_rows={len(prop_rows)} board_rows={len(dash_rows)} "
           f"flips={sum(1 for r in slim_rows if r.get('flip'))} "
+          f"suppressed={sum(1 for r in slim_rows if r.get('suppressed'))} "
           f"flagged_today={len(new_flagged)}")
     return "LIVE", counter[0]
 

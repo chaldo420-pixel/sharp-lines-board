@@ -551,7 +551,7 @@ function render() {
   // threshold AND be sharp-anchored (2+ books, at least 1 sharp),
   // so single-book and soft-only rows never look like plays.
   var plays = comparable.filter(function (r) {
-    return r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold && isSharpAnchored(r);
+    return !r.suppressed && r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold && isSharpAnchored(r);
   }).slice().sort(function (a, b) { return (Number(b.bestEv) || 0) - (Number(a.bestEv) || 0); });
   $("thresholdNote").textContent = "+" + Number(threshold).toFixed(1) + "%";
   $("plays").innerHTML = plays.length
@@ -572,7 +572,9 @@ function render() {
 
   // rest of the board
   var rest = comparable.filter(function (r) {
-    return !(r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold);
+    // A suppressed row is not a +EV play, so it shows here as a
+    // regular row with its EV visible (one-side rule, Nov 21 2026).
+    return r.suppressed || !(r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold);
   });
   if (activeTab === "game") rest = rest.filter(function (r) { return r.kind === "game"; });
   if (activeTab === "props") rest = rest.filter(function (r) { return r.kind === "prop"; });
@@ -607,7 +609,7 @@ function render() {
 
   // alerts count
   var alertable = comparable.filter(function (r) {
-    return r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold && isSharpAnchored(r);
+    return !r.suppressed && r.bestEv !== null && r.bestEv !== undefined && Number(r.bestEv) >= threshold && isSharpAnchored(r);
   }).length;
   $("alertsCount").textContent = alertable + " line" + (alertable === 1 ? "" : "s") +
     " clear" + (alertable === 1 ? "s" : "") + " +" + Number(threshold).toFixed(1) + "% right now.";
