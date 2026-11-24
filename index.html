@@ -80,6 +80,12 @@
   .refresh-btn:disabled { opacity: .55; cursor: default; }
   .refresh-status { font-size: 14px; color: var(--dim); margin-top: 4px; min-height: 18px; }
 
+  /* --- flagged-today count --- */
+  .flagged-today { margin-top: 12px; border-radius: var(--radius); border: 2px solid var(--accent); background: var(--surface); padding: 12px 16px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
+  .flagged-today .ft-count { font-size: 34px; font-weight: 800; line-height: 1; color: var(--accent); }
+  .flagged-today .ft-label { font-size: 16px; font-weight: 700; }
+  .flagged-today .ft-time { font-size: 14px; color: var(--dim); margin-left: auto; }
+
   /* --- filter chips --- */
   .chips-label { font-size: 12px; font-weight: 600; color: var(--dim); margin: 16px 0 6px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -215,6 +221,12 @@
   </div>
   <p class="refresh-status" id="refreshStatus"></p>
 
+  <div class="flagged-today" id="flaggedTodayCard">
+    <span class="ft-count" id="flaggedTodayCount">&mdash;</span>
+    <span class="ft-label">flagged today</span>
+    <span class="ft-time" id="flaggedTodayTime"></span>
+  </div>
+
   <div class="chips-label">Filter by game</div>
   <div class="chips" id="chips" role="group" aria-label="Filter by game"></div>
 
@@ -334,6 +346,13 @@ function fmtPct(v) {
 function fmtEv(v) {
   var p = fmtPct(v);
   return p === null ? null : p + " EV";
+}
+
+// Snapshot time rendered in ET, e.g. "Nov 23, 10:55 PM ET".
+function fmtSnapshotTime(v) {
+  var d = new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  return d.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET";
 }
 
 function impliedPct(odds) {
@@ -616,6 +635,9 @@ function render() {
   $("thresholdInput").value = threshold;
 
   $("snapshotLabel").textContent = data.snapshotLabel || data.snapshotAt || "";
+  var ft = Array.isArray(data.flaggedToday) ? data.flaggedToday.length : null;
+  $("flaggedTodayCount").textContent = ft === null ? "\u2014" : String(ft);
+  $("flaggedTodayTime").textContent = data.snapshotAt ? "Snapshot " + fmtSnapshotTime(data.snapshotAt) : "";
   $("updatedLine").textContent = "\u00b7 Updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
