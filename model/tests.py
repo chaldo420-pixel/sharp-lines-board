@@ -809,6 +809,93 @@ class TestFlipMarker(unittest.TestCase):
             os.unlink(path)
 
 
+class TestLastTipoff(unittest.TestCase):
+    def _write_board(self, board):
+        import json as _json
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".json", delete=False) as f:
+            _json.dump(board, f)
+            return f.name
+
+    def test_tier_interval(self):
+        # Busy slates moved to 10 min on Nov 27, 2026 (was 20/15).
+        from build_board import _tier_interval
+        self.assertEqual(_tier_interval(12), 10)
+        self.assertEqual(_tier_interval(9), 10)
+        self.assertEqual(_tier_interval(5), 10)
+        self.assertEqual(_tier_interval(4), 5)
+        self.assertEqual(_tier_interval(0), 5)
+
+    def test_last_tipoff_today(self):
+        import os
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        import build_board
+        et = ZoneInfo("America/New_York")
+        now = datetime(2026, 11, 27, 12, 0, tzinfo=et)
+        tip = datetime(2026, 11, 27, 21, 30, tzinfo=et)
+        cases = [
+            # Today's tip-off: returned.
+            ({"lastTipoff": tip.isoformat()}, tip),
+            # Yesterday's tip-off: ignored.
+            ({"lastTipoff": "2026-11-26T21:30:00-05:00"}, None),
+            # Missing field: None.
+            ({}, None),
+            # Unparseable value: None.
+            ({"lastTipoff": "not a time"}, None),
+        ]
+        orig = build_board._board_path
+        try:
+            for board, expected in cases:
+                path = self._write_board(board)
+                build_board._board_path = lambda p=path: p
+                self.assertEqual(
+                    build_board._last_tipoff_today(now), expected)
+                os.unlink(path)
+            # Corrupt JSON -> None.
+            import tempfile
+            with tempfile.NamedTemporaryFile(
+                    "w", suffix=".json", delete=False) as f:
+                f.write("{not json")
+                path = f.name
+            build_board._board_path = lambda: path
+            self.assertIsNone(build_board._last_tipoff_today(now))
+            os.unlink(path)
+        finally:
+            build_board._board_path = orig
+
+    def test_past_last_tipoff(self):
+        import os
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        import build_board
+        et = ZoneInfo("America/New_York")
+        tip = datetime(2026, 11, 27, 21, 30, tzinfo=et)
+        path = self._write_board({"lastTipoff": tip.isoformat()})
+        orig = build_board._board_path
+        try:
+            build_board._board_path = lambda: path
+            # Before the tip: still due.
+            self.assertFalse(build_board._past_last_tipoff(
+                datetime(2026, 11, 27, 21, 0, tzinfo=et)))
+            # At/after the tip: past it.
+            self.assertTrue(build_board._past_last_tipoff(tip))
+            self.assertTrue(build_board._past_last_tipoff(
+                datetime(2026, 11, 27, 22, 0, tzinfo=et)))
+        finally:
+            build_board._board_path = orig
+            os.unlink(path)
+        # No tip-off stored: never past it.
+        build_board._board_path = lambda: \
+            "/tmp/definitely-not-a-board-xyz.json"
+        try:
+            self.assertFalse(build_board._past_last_tipoff(
+                datetime(2026, 11, 27, 22, 0, tzinfo=et)))
+        finally:
+            build_board._board_path = orig
+
+
 class TestOneSide(unittest.TestCase):
     def _row(self, **kw):
         r = {"game": "Boston Celtics @ Sacramento Kings",

@@ -21,8 +21,15 @@ Rules (same model as the Sharp Lines Dashboard):
     comes from its BEST book; "+EV >=2%" only ever appears on
     a sharp anchor.
   * Alert threshold +2% EV. No bet links anywhere.
-  * Window: 08:00-23:00 ET only. Outside the window the run
-    exits quietly (status SKIPPED), no API calls.
+  * Window: 08:00 ET until the day's last tip-off (stored in
+    board.json's lastTipoff by each full refresh, read back with
+    zero API calls), and never past 23:00 ET. Outside the window
+    the run exits quietly (status SKIPPED), no API calls. When
+    there is no lastTipoff for today yet (first run of the day,
+    a 0-row snapshot), the window ends at 23:00 ET. Once the
+    last game has tipped there are no pre-game lines left to
+    flag. Caveat: lastTipoff is the SCHEDULED tip from the feed,
+    so a delayed game can leave its lines open past the cutoff.
   * Adaptive cadence: the trigger fires every 5 minutes
     (cron-job.org); the model picks its own refresh interval
     from the distinct games on today's board snapshot, read
@@ -125,6 +132,50 @@ def _last_snapshot(now_et):
     if not games:
         return None, None
     return snap_at, len(games)
+
+
+def _last_tipoff_today(now_et):
+    """Last tip-off (ET datetime) from today's board snapshot.
+
+    Stored by build() in board.json's lastTipoff field. Returns None
+    when there is no usable value for today: first run of the day,
+    a 0-row snapshot, or a missing/corrupt board.json. Zero API calls.
+    """
+    try:
+        with open(_board_path(), encoding="utf-8") as f:
+            board = json.load(f)
+    except (OSError, ValueError):
+        return None
+    raw = board.get("lastTipoff")
+    if not raw:
+        return None
+    try:
+        tip = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if tip.tzinfo is None:
+        tip = tip.replace(tzinfo=ET)
+    tip_et = tip.astimezone(ET)
+    if tip_et.date() != now_et.date():
+        return None
+    return tip_et
+
+
+def _past_last_tipoff(now_et):
+    """True when today's last game has already tipped off.
+
+    Once the last game starts there are no pre-game lines left to
+    flag, so the run exits quietly like it would outside the window.
+    """
+    tip = _last_tipoff_today(now_et)
+    if tip is None:
+        return False
+    if now_et >= tip:
+        print(f"SKIPPED: {now_et.strftime('%H:%M')} ET is past today's "
+              f"last tip-off ({tip.strftime('%H:%M')} ET) — "
+              f"no API calls, no refresh")
+        return True
+    return False
 
 
 def skip_if_not_due(now_et):
@@ -431,14 +482,17 @@ def build(now_et):
 
     events = list_events(counter)
     game_dates = {}
+    tipoffs = []
     for ev in events:
         game_label = f"{ev.get('away_team')} @ {ev.get('home_team')}"
         ct = ev.get("commence_time")
         try:
             dt = datetime.fromisoformat(ct.replace("Z", "+00:00"))
             game_dates[game_label] = dt.astimezone(ET).date().isoformat()
+            tipoffs.append(dt.astimezone(ET))
         except (ValueError, AttributeError):
             game_dates[game_label] = date_str
+    last_tipoff = max(tipoffs) if tipoffs else None
 
     if not budget_ok(date_str, len(events)):
         print(f"BUDGET_EXCEEDED: today {today_total(date_str, _log_path())} "
@@ -491,6 +545,8 @@ def build(now_et):
         "flaggedToday": new_flagged,
         "rows": slim_rows,
     }
+    if last_tipoff is not None:
+        out["lastTipoff"] = last_tipoff.isoformat()
     with open(_board_path(), "w", encoding="utf-8") as f:
         json.dump(out, f, separators=(",", ":"))
 
@@ -519,6 +575,8 @@ def main():
     if not in_window(now_et):
         print(f"SKIPPED: {now_et.strftime('%H:%M')} ET is outside the "
               f"08:00-23:00 ET window — no API calls, no refresh")
+        return 0
+    if _past_last_tipoff(now_et):
         return 0
     if skip_if_not_due(now_et):
         return 0
