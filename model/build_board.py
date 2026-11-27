@@ -27,8 +27,10 @@ Rules (same model as the Sharp Lines Dashboard):
     (cron-job.org); the model picks its own refresh interval
     from the distinct games on today's board snapshot, read
     from the already-checked-out board.json (zero PropLine
-    calls to decide): 12+ games -> 20 min, 9-11 -> 15 min,
-    5-8 -> 10 min, 4 or fewer -> 5 min. If the last snapshot
+    calls to decide): 5+ games -> 10 min, 4 or fewer -> 5 min
+    (busy slates used to be 20/15 min; George moved them to 10
+    on Nov 27, 2026 to test usage against the 1,000/day cap).
+    If the last snapshot
     is newer than the tier interval the run exits SKIPPED with
     no API calls and no board write. A missing snapshot, a
     snapshot from a previous day, or a 0-row snapshot is
@@ -90,10 +92,6 @@ def _board_path():
 
 def _tier_interval(game_count):
     """Refresh interval (minutes) for today's game count."""
-    if game_count >= 12:
-        return 20
-    if game_count >= 9:
-        return 15
     if game_count >= 5:
         return 10
     return 5
