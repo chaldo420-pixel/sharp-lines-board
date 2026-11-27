@@ -260,7 +260,7 @@
 
   <div class="alerts-card">
     <h2>Alerts</h2>
-    <p>One alert per line at or above your threshold, best book first. Prop alerts also require a sharp anchor of at least 2 books including Pinnacle, Novig, ProphetX, BetOnline, Circa, BookMaker, Kalshi, Polymarket, or Sporttrade. The board refreshes every 15 minutes, 8 AM&ndash;11 PM ET. Chat alerts come from the watcher that reads this board.</p>
+    <p>One alert per line at or above your threshold, best book first. Prop alerts also require a sharp anchor of at least 2 books including Pinnacle, Novig, ProphetX, BetOnline, Circa, BookMaker, Kalshi, Polymarket, or Sporttrade. The board refreshes every 10 minutes on busy slates, 8 AM until the last game tips off<span id="lastTipNote"></span>. Chat alerts come from the watcher that reads this board.</p>
     <div class="alert-controls">
       <label>Alert me at EV of&nbsp; + <input id="thresholdInput" type="number" min="0" max="50" step="0.5" value="2"> %</label>
       <button id="saveThreshold" class="save-btn" disabled>Save</button>
@@ -543,6 +543,21 @@ function render() {
     try {
       if (localStorage.getItem("sl-threshold") === null) threshold = Number(data.thresholdPct);
     } catch (e) { threshold = Number(data.thresholdPct); }
+  }
+
+  // last tip-off note: refreshes stop when the last game tips
+  var tipNote = $("lastTipNote");
+  if (tipNote) {
+    var tip = null;
+    try { if (data.lastTipoff) tip = new Date(data.lastTipoff); } catch (e) { tip = null; }
+    if (tip && !isNaN(tip.getTime())) {
+      var th = tip.getHours(), tm = tip.getMinutes();
+      var tap = th >= 12 ? "PM" : "AM";
+      var th12 = th % 12; if (th12 === 0) th12 = 12;
+      tipNote.textContent = " (today: " + th12 + ":" + (tm < 10 ? "0" : "") + tm + " " + tap + " ET)";
+    } else {
+      tipNote.textContent = " (never past 11 PM ET)";
+    }
   }
 
   // game chips
