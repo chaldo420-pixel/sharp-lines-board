@@ -30,6 +30,10 @@ Rules (same model as the Sharp Lines Dashboard):
     last game has tipped there are no pre-game lines left to
     flag. Caveat: lastTipoff is the SCHEDULED tip from the feed,
     so a delayed game can leave its lines open past the cutoff.
+    The first run past last tip-off writes one final empty board
+    (rows=[], today's flaggedToday and lastTipoff kept) so the
+    board clears completely instead of freezing on the last
+    pre-tip snapshot; later runs exit quietly. Zero API calls.
   * Adaptive cadence: the trigger fires every 5 minutes
     (cron-job.org); the model picks its own refresh interval
     from the distinct games on today's board snapshot, read
@@ -165,7 +169,8 @@ def _past_last_tipoff(now_et):
     """True when today's last game has already tipped off.
 
     Once the last game starts there are no pre-game lines left to
-    flag, so the run exits quietly like it would outside the window.
+    flag, so the run exits after writing the final clear (see
+    _write_final_clear) instead of refreshing.
     """
     tip = _last_tipoff_today(now_et)
     if tip is None:
@@ -176,6 +181,50 @@ def _past_last_tipoff(now_et):
               f"no API calls, no refresh")
         return True
     return False
+
+
+def _write_final_clear(now_et):
+    """Write one final empty board once the last game has tipped.
+
+    Past last tip-off the run exits without a refresh, which used
+    to freeze the board on the last pre-tip snapshot — the last
+    game's rows stayed visible all night even though the game had
+    started (Nov 27, 2026: 112 Lakers @ Spurs rows stuck after
+    the 21:35 ET snapshot). The clear writes rows=[] (rowCount 0)
+    while keeping today's flaggedToday and lastTipoff, so the
+    flagged-today count and the watcher's backfill still work.
+    Zero API calls. Returns True when it wrote, False when there
+    was nothing to clear (board already empty, or no usable
+    board on disk) — later runs then exit quietly.
+    """
+    try:
+        with open(_board_path(), encoding="utf-8") as f:
+            board = json.load(f)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(board.get("rows"), list) or not board["rows"]:
+        return False
+    flagged = _load_flagged_today(now_et)
+    tip = _last_tipoff_today(now_et)
+    out = {
+        "generatedAt": datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"),
+        "snapshotLabel": now_et.strftime(
+            "PropLine live · %b %-d, %-I:%M %p ET"),
+        "snapshotAt": now_et.isoformat(),
+        "rowCount": 0,
+        "thresholdPct": int(ALERT_THRESHOLD_EV),
+        "flaggedToday": flagged,
+        "rows": [],
+    }
+    if tip is not None:
+        out["lastTipoff"] = tip.isoformat()
+    with open(_board_path(), "w", encoding="utf-8") as f:
+        json.dump(out, f, separators=(",", ":"))
+    print(f"CLEARED: final empty board written at "
+          f"{now_et.strftime('%H:%M')} ET — {len(flagged)} lines flagged "
+          f"today kept, 0 rows live")
+    return True
 
 
 def skip_if_not_due(now_et):
@@ -577,6 +626,7 @@ def main():
               f"08:00-23:00 ET window — no API calls, no refresh")
         return 0
     if _past_last_tipoff(now_et):
+        _write_final_clear(now_et)
         return 0
     if skip_if_not_due(now_et):
         return 0

@@ -896,6 +896,108 @@ class TestLastTipoff(unittest.TestCase):
             build_board._board_path = orig
 
 
+class TestFinalClear(unittest.TestCase):
+    def _write_board(self, board):
+        import json as _json
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".json", delete=False) as f:
+            _json.dump(board, f)
+            return f.name
+
+    def _read_board(self, path):
+        import json as _json
+        with open(path, encoding="utf-8") as f:
+            return _json.load(f)
+
+    def test_clear_writes_empty_board_keeping_flagged(self):
+        import os
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        import build_board
+        et = ZoneInfo("America/New_York")
+        now = datetime(2026, 11, 27, 21, 50, tzinfo=et)
+        tip = datetime(2026, 11, 27, 21, 45, tzinfo=et)
+        board = {
+            "snapshotAt": datetime(
+                2026, 11, 27, 21, 35, tzinfo=et).isoformat(),
+            "lastTipoff": tip.isoformat(),
+            "flaggedToday": ["2026-11-27|G|P|Points|Over|10.5"],
+            "rows": [{"game": "G", "bestEv": 3.0}],
+            "rowCount": 1,
+        }
+        path = self._write_board(board)
+        orig = build_board._board_path
+        try:
+            build_board._board_path = lambda: path
+            self.assertTrue(build_board._past_last_tipoff(now))
+            self.assertTrue(build_board._write_final_clear(now))
+            cleared = self._read_board(path)
+            self.assertEqual(cleared["rows"], [])
+            self.assertEqual(cleared["rowCount"], 0)
+            self.assertEqual(cleared["flaggedToday"],
+                             ["2026-11-27|G|P|Points|Over|10.5"])
+            self.assertEqual(cleared["lastTipoff"], tip.isoformat())
+            self.assertEqual(cleared["snapshotAt"], now.isoformat())
+            # Second run: already empty, nothing written.
+            self.assertFalse(build_board._write_final_clear(now))
+            self.assertEqual(self._read_board(path), cleared)
+        finally:
+            build_board._board_path = orig
+            os.unlink(path)
+
+    def test_clear_noop_when_board_missing_or_corrupt(self):
+        import os
+        import tempfile
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        import build_board
+        et = ZoneInfo("America/New_York")
+        now = datetime(2026, 11, 27, 21, 50, tzinfo=et)
+        orig = build_board._board_path
+        try:
+            build_board._board_path = lambda: \
+                "/tmp/definitely-not-a-board-xyz.json"
+            self.assertFalse(build_board._write_final_clear(now))
+            with tempfile.NamedTemporaryFile(
+                    "w", suffix=".json", delete=False) as f:
+                f.write("{not json")
+                path = f.name
+            build_board._board_path = lambda: path
+            self.assertFalse(build_board._write_final_clear(now))
+            os.unlink(path)
+        finally:
+            build_board._board_path = orig
+
+    def test_clear_drops_yesterdays_flagged_and_tipoff(self):
+        import os
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        import build_board
+        et = ZoneInfo("America/New_York")
+        now = datetime(2026, 11, 27, 21, 50, tzinfo=et)
+        board = {
+            "snapshotAt": datetime(
+                2026, 11, 26, 21, 35, tzinfo=et).isoformat(),
+            "lastTipoff": "2026-11-26T21:30:00-05:00",
+            "flaggedToday": ["2026-11-26|G|P|Points|Over|10.5"],
+            "rows": [{"game": "G", "bestEv": 3.0}],
+            "rowCount": 1,
+        }
+        path = self._write_board(board)
+        orig = build_board._board_path
+        try:
+            build_board._board_path = lambda: path
+            self.assertTrue(build_board._write_final_clear(now))
+            cleared = self._read_board(path)
+            self.assertEqual(cleared["rows"], [])
+            self.assertEqual(cleared["flaggedToday"], [])
+            self.assertNotIn("lastTipoff", cleared)
+        finally:
+            build_board._board_path = orig
+            os.unlink(path)
+
+
 class TestOneSide(unittest.TestCase):
     def _row(self, **kw):
         r = {"game": "Boston Celtics @ Sacramento Kings",
